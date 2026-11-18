@@ -3,9 +3,12 @@
 
 #include "markdownhighlighter.h"
 #include "markdowntable.h"
+#include "mathrenderer.h"
 
 #include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QPalette>
 #include <QRegularExpression>
 #include <QTextDocument>
@@ -25,6 +28,7 @@ const QRegularExpression kRefDefinition(uR"(^ {0,3}\[[^\]]+\]:[ \t])"_s);
 
 // Inline patterns
 const QRegularExpression kCodeSpan(uR"((`+)(.+?)(?<!`)\1(?!`))"_s);
+const QRegularExpression kInlineDisplayMath(uR"((?<![\\$])\$\$(?=\S)([^$\n]+?)(?<=\S)\$\$)"_s);
 const QRegularExpression kInlineMath(uR"((?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$]))"_s);
 const QRegularExpression kImage(uR"(!\[([^\]]*)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 const QRegularExpression kLink(uR"((?<!!)\[([^\]]+)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
@@ -51,8 +55,12 @@ void MarkdownHighlighter::refreshStyles()
 
     m_hidden = QTextCharFormat();
     m_hidden.setForeground(Qt::transparent);
-    // Tiny enough that hidden markers leave no visible gap.
-    m_hidden.setFontPointSize(0.05);
+    // Hidden markers must take no space: a 1pt font at 1% letter spacing (measured:
+    // 18 characters < 0.5px). Don't go below 1pt: a size that rounds to 0px sends Qt
+    // through every fallback font, which took seconds per file.
+    m_hidden.setFontPointSize(1);
+    m_hidden.setFontLetterSpacingType(QFont::PercentageSpacing);
+    m_hidden.setFontLetterSpacing(1);
 
     m_strut = QTextCharFormat();
     m_strut.setForeground(Qt::transparent);
@@ -111,6 +119,10 @@ void MarkdownHighlighter::refreshStyles()
     m_math.setFontFamilies({fixed.family()});
     m_math.setForeground(pal.color(QPalette::LinkVisited));
 
+    m_mathError = m_math;
+    m_mathError.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+    m_mathError.setUnderlineColor(QColor(0xda, 0x44, 0x53)); // Breeze negative text
+
     m_table = QTextCharFormat();
     m_table.setFontFamilies({fixed.family()});
 
@@ -151,6 +163,14 @@ void MarkdownHighlighter::updateActiveRange()
             first = first.previous();
         }
         while (last.next().isValid() && (last.next().userState() == TableDelimiter || last.next().userState() == TableRow)) {
+            last = last.next();
+        }
+    } else if (first.userState() == MathBlock || first.userState() == MathBlockEnd) {
+        // A $$ block shows as source in full while the cursor is anywhere in it.
+        while (first.previous().isValid() && first.previous().userState() == MathBlock) {
+            first = first.previous();
+        }
+        while (last.userState() == MathBlock && last.next().isValid()) {
             last = last.next();
         }
     }
@@ -208,6 +228,7 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     };
 
     setCurrentBlockState(Normal);
+    m_spans.clear();
 
     // YAML front matter at the very top of the file.
     if (currentBlock().blockNumber() == 0 && text == u"---"_s) {
@@ -238,10 +259,15 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
 
     // Inside a $$ math block.
     if (prev == MathBlock) {
-        apply(0, text.size(), m_math);
-        if (text.trimmed() != u"$$"_s) {
-            setCurrentBlockState(MathBlock);
+        setCurrentBlockState(text.trimmed().endsWith(u"$$"_s) ? MathBlockEnd : MathBlock);
+        // When the opening line shows the rendered formula, the rest of the source collapses.
+        QTextBlock opening = currentBlock().previous();
+        while (opening.previous().isValid() && opening.previous().userState() == MathBlock) {
+            opening = opening.previous();
         }
+        const auto *data = dynamic_cast<MathBlockData *>(opening.userData());
+        const bool rendered = !active && data && !data->spans.isEmpty() && data->spans.first().display;
+        apply(0, text.size(), rendered ? m_hidden : m_math);
         return flush(formats);
     }
 
@@ -262,11 +288,26 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     }
 
     if (const QString t = text.trimmed(); t.startsWith(u"$$"_s)) {
-        apply(0, text.size(), m_math);
         const bool singleLine = t.size() > 4 && t.endsWith(u"$$"_s);
-        if (!singleLine) {
-            setCurrentBlockState(MathBlock);
+        setCurrentBlockState(singleLine ? MathLine : MathBlock);
+        if (!active) {
+            int last = -1;
+            const QString latex = singleLine ? t.mid(2, t.size() - 4).trimmed() : displayMathSource(currentBlock(), &last);
+            if (!latex.isEmpty()) {
+                const auto metrics = MathRenderer::instance().measure(latex, true, mathPixelSize(true));
+                if (!metrics.ok) {
+                    apply(0, text.size(), m_mathError);
+                    return flush(formats);
+                }
+                // Collapse the source to one line tall enough for the formula; the editor paints it.
+                constexpr qreal padding = 4;
+                apply(0, text.size(), m_hidden);
+                formats[0] = mathStrut(metrics.ascent + padding, metrics.descent + padding, 0, text.at(0));
+                m_spans.append({0, int(text.size()), latex, true});
+                return flush(formats);
+            }
         }
+        apply(0, text.size(), m_math);
         return flush(formats);
     }
 
@@ -348,7 +389,7 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     flush(formats);
 }
 
-void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active) const
+void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active)
 {
     QList<bool> taken(text.size(), false);
 
@@ -385,13 +426,32 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
         take(m.capturedStart(0), m.capturedLength(0));
     }
 
-    for (auto it = kInlineMath.globalMatch(text, from); it.hasNext();) {
-        const auto m = it.next();
-        if (!isFree(m.capturedStart(0), m.capturedLength(0))) {
-            continue;
+    // $$...$$ inside a paragraph renders in display style but stays in the line.
+    for (const auto *pattern : {&kInlineDisplayMath, &kInlineMath}) {
+        const bool displayStyle = pattern == &kInlineDisplayMath;
+        for (auto it = pattern->globalMatch(text, from); it.hasNext();) {
+            const auto m = it.next();
+            if (!isFree(m.capturedStart(0), m.capturedLength(0))) {
+                continue;
+            }
+            const int start = m.capturedStart(0);
+            const int length = m.capturedLength(0);
+            take(start, length);
+            if (active) {
+                apply(start, length, m_math);
+                continue;
+            }
+            const QString latex = (displayStyle ? u"\\displaystyle "_s : QString()) + m.captured(1);
+            const auto metrics = MathRenderer::instance().measure(latex, false, mathPixelSize(false));
+            if (!metrics.ok) {
+                apply(start, length, m_mathError);
+                continue;
+            }
+            // Hide the source; its first character reserves the formula's width and height.
+            apply(start, length, m_hidden);
+            formats[start] = mathStrut(metrics.ascent, metrics.descent, metrics.width, text.at(start));
+            m_spans.append({start, length, latex, false});
         }
-        apply(m.capturedStart(0), m.capturedLength(0), m_math);
-        take(m.capturedStart(0), m.capturedLength(0));
     }
 
     for (auto it = kImage.globalMatch(text, from); it.hasNext();) {
@@ -454,8 +514,63 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
     }
 }
 
+qreal MarkdownHighlighter::mathPixelSize(bool display) const
+{
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const qreal dpi = screen ? screen->logicalDotsPerInchY() : 96.0;
+    const qreal points = document()->defaultFont().pointSizeF() > 0 ? document()->defaultFont().pointSizeF() : 11.0;
+    return points * dpi / 72.0 * (display ? 1.15 : 1.0);
+}
+
+QTextCharFormat MarkdownHighlighter::mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const
+{
+    const QFont base = document()->defaultFont();
+    const QFontMetricsF metrics(base);
+    // Inline formulas sit on the baseline: the line needs their ascent, and their descent
+    // may use the extra line spacing below the text. Display formulas are centered, so
+    // only the total height matters (width == 0).
+    const qreal fontHeight = metrics.ascent() + metrics.descent();
+    const qreal below = metrics.descent() + fontHeight * (LineHeightPercent - 100) / 100.0;
+    const qreal scale = width > 0 ? qMax<qreal>(1.0, qMax(ascent / metrics.ascent(), descent / below))
+                                  : qMax<qreal>(1.0, (ascent + descent) / fontHeight);
+    QFont font = base;
+    font.setPointSizeF(base.pointSizeF() * scale);
+
+    QTextCharFormat format;
+    format.setForeground(Qt::transparent);
+    format.setFontPointSize(font.pointSizeF());
+    if (width > 0) {
+        format.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+        format.setFontLetterSpacing(width - QFontMetricsF(font).horizontalAdvance(character));
+    }
+    return format;
+}
+
+QString MarkdownHighlighter::displayMathSource(const QTextBlock &opening, int *lastBlock) const
+{
+    QString latex = opening.text().trimmed().mid(2);
+    for (QTextBlock b = opening.next(); b.isValid(); b = b.next()) {
+        const QString t = b.text().trimmed();
+        if (t.endsWith(u"$$"_s)) {
+            latex += u'\n' + t.chopped(2);
+            *lastBlock = b.blockNumber();
+            return latex.trimmed();
+        }
+        latex += u'\n' + b.text();
+    }
+    return {}; // never closed: leave it as source
+}
+
 void MarkdownHighlighter::flush(const FormatList &formats)
 {
+    if (m_spans.isEmpty()) {
+        setCurrentBlockUserData(nullptr);
+    } else {
+        auto *data = new MathBlockData;
+        data->spans = m_spans;
+        setCurrentBlockUserData(data);
+    }
+
     const int n = formats.size();
     int i = 0;
     while (i < n) {

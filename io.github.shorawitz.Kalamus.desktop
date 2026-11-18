@@ -6,5 +6,5 @@ Comment=Write Markdown with live formatting
 Exec=kalamus %F
 Icon=text-markdown
 Terminal=false
-Categories=Qt;KDE;Office;TextEditor;
+Categories=Qt;KDE;Utility;TextEditor;
 MimeType=text/markdown;text/x-markdown;

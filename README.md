@@ -22,7 +22,19 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 QT_QPA_PLATFORM=offscreen ctest --test-dir build   # tests
 ./build/bin/kalamus [file-or-folder]
+
+# Install for your user (app menu entry + `kalamus` on PATH); re-run after rebuilding
+cmake --install build --prefix ~/.local
 ```
+
+The first configure downloads JKQtPlotter (pinned commit, see `3rdparty/CMakeLists.txt`);
+only its LaTeX math renderer is compiled in.
+
+## Third-party code
+
+- **JKQTMathText** from [JKQtPlotter](https://github.com/jkriege2/JKQtPlotter), LGPL-2.1-or-later
+- **XITS math fonts** (bundled with JKQTMathText), SIL Open Font License 1.1
+- **cmark-gfm**, BSD-2-Clause (system library)
 
 ## Shortcuts
 
@@ -51,7 +63,9 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build   # tests
 - [x] Export: HTML, PDF (built in); Word, ODT (via pandoc)
 - [x] Tables drawn as a grid when the cursor is outside; aligned source with
       spreadsheet-style keys inside; Table menu and right-click actions
-- [ ] Math rendered inline (`$…$`, `$$…$$`), likely via MicroTeX
+- [x] Math: `$…$` and `$$…$$` drawn as formulas (JKQTMathText) when the cursor is
+      elsewhere, LaTeX source when it's in them; broken formulas get a red underline;
+      exported as KaTeX in HTML and as images in PDF
 - [ ] Images shown inline
 - [ ] Code block syntax highlighting (KSyntaxHighlighting) with full-width background
 - [ ] Spell checking (Sonnet)

@@ -3,6 +3,7 @@
 
 #include "exporter.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
@@ -26,6 +27,31 @@ private Q_SLOTS:
         QVERIFY(html.contains(u"<table>"_s));
         QVERIFY(html.contains(u"checkbox"_s));
         QVERIFY(html.contains(u"$E = mc^2$"_s)); // left for KaTeX
+    }
+
+    void htmlKeepsLatexIntact()
+    {
+        const QString md = u"Set $\\{x \\mid x > 0\\}$ and `$code$`.\n\n$$\n\\frac{a}{b} \\\\ c\n$$\n\nTwo: $a$ and $b$.\n"_s;
+        const QString html = Exporter::toHtmlDocument(md, u"t"_s);
+        QVERIFY2(html.contains(u"<span class=\"math\">$\\{x \\mid x &gt; 0\\}$</span>"_s), qPrintable(html));
+        QVERIFY(html.contains(u"<div class=\"math\">$$\\frac{a}{b} \\\\ c$$</div>"_s));
+        QVERIFY(html.contains(u"<code>$code$</code>"_s));
+        QVERIFY(html.contains(u"<span class=\"math\">$a$</span> and <span class=\"math\">$b$</span>"_s));
+        QVERIFY(!html.contains(u"KALAMUSMATH"_s));
+    }
+
+    void pdfWithMath()
+    {
+        QTemporaryDir dir;
+        QString error;
+        const QString plain = dir.filePath(u"plain.pdf"_s);
+        const QString math = dir.filePath(u"math.pdf"_s);
+        QVERIFY(Exporter::exportPdf(u"Text E = mc2\n"_s, dir.path(), plain, &error));
+        QVERIFY2(Exporter::exportPdf(u"Text $E = mc^2$\n\n$$\\int_0^1 x\\,dx$$\n"_s, dir.path(), math, &error), qPrintable(error));
+        QVERIFY(QFileInfo(math).size() > QFileInfo(plain).size()); // images embedded
+        if (const QString keep = qEnvironmentVariable("KALAMUS_KEEP_EXPORTS"); !keep.isEmpty()) {
+            QFile::copy(math, keep + u"/math.pdf"_s); // for looking at the result by eye
+        }
     }
 
     void pdfIsWritten()

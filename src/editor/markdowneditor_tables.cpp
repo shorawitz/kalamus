@@ -510,12 +510,10 @@ bool MarkdownEditor::tableHitTest(const QPoint &pos, QTextCursor *cursor) const
 void MarkdownEditor::paintEvent(QPaintEvent *event)
 {
     QTextEdit::paintEvent(event);
-    const auto grids = visibleTables();
-    if (grids.isEmpty()) {
-        return;
-    }
     QPainter painter(viewport());
     painter.setClipRegion(event->region());
+    paintMath(painter);
+    const auto grids = visibleTables();
     for (const TableGrid &grid : grids) {
         paintTable(painter, grid);
     }

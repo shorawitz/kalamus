@@ -100,7 +100,7 @@ void MarkdownEditor::applyLineSpacing()
     QTextCursor c(document());
     c.select(QTextCursor::Document);
     QTextBlockFormat format;
-    format.setLineHeight(135, QTextBlockFormat::ProportionalHeight);
+    format.setLineHeight(MarkdownHighlighter::LineHeightPercent, QTextBlockFormat::ProportionalHeight);
     c.mergeBlockFormat(format);
 }
 

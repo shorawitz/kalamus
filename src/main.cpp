@@ -24,7 +24,7 @@ int main(int argc, char **argv)
                      i18n("A Markdown editor for KDE with live formatting"),
                      KAboutLicense::GPL_V3,
                      i18n("© 2026 David Christensen"));
-    about.setDesktopFileName(u"kalamus"_s);
+    about.setDesktopFileName(u"io.github.shorawitz.Kalamus"_s);
     KAboutData::setApplicationData(about);
     QApplication::setWindowIcon(QIcon::fromTheme(u"text-markdown"_s));
 

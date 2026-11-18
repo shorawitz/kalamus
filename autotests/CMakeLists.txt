@@ -7,6 +7,8 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Test)
 ecm_add_tests(
     exportertest.cpp
     markdowntabletest.cpp
+    mathrenderertest.cpp
+    matheditingtest.cpp
     tableeditingtest.cpp
     LINK_LIBRARIES kalamuscore Qt6::Test
 )

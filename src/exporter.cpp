@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "exporter.h"
+#include "mathrenderer.h"
 
 #include <QFile>
+#include <QGuiApplication>
+#include <QRegularExpression>
+#include <QScreen>
 #include <QPrinter>
 #include <QProcess>
 #include <QStandardPaths>
@@ -15,7 +19,9 @@
 #include <cmark-gfm-core-extensions.h>
 #include <cmark-gfm.h>
 
+#include <algorithm>
 #include <cstdlib>
+#include <functional>
 
 using namespace Qt::StringLiterals;
 
@@ -46,6 +52,132 @@ blockquote { color: #555555; margin-left: 16px; }
 table { border-collapse: collapse; }
 th, td { border: 1px solid #999999; padding: 4px 8px; }
 )"_s;
+struct MathItem {
+    QString latex;
+    bool display = false;
+};
+
+const QRegularExpression kFence(uR"(^ {0,3}(`{3,}|~{3,}))"_s);
+const QRegularExpression kCodeSpan(uR"((`+)(.+?)(?<!`)\1(?!`))"_s);
+const QRegularExpression kInlineDisplayMath(uR"((?<![\\$])\$\$(?=\S)([^$\n]+?)(?<=\S)\$\$)"_s);
+const QRegularExpression kInlineMath(uR"((?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$]))"_s);
+
+QString placeholder(int index)
+{
+    return u"KALAMUSMATH%1X"_s.arg(index);
+}
+
+/**
+ * Swaps every formula for a placeholder, so the Markdown converter cannot touch the
+ * LaTeX (it would treat backslashes as escapes). Code blocks and code spans are skipped,
+ * using the same rules as the editor.
+ */
+QString protectMath(const QString &markdown, QList<MathItem> *items)
+{
+    const QStringList lines = markdown.split(u'\n');
+    QStringList out;
+    QChar fence;
+    for (int i = 0; i < lines.size(); ++i) {
+        const QString &line = lines.at(i);
+        const QString trimmed = line.trimmed();
+        if (!fence.isNull()) {
+            if (trimmed.size() >= 3 && trimmed == QString(trimmed.size(), fence)) {
+                fence = QChar();
+            }
+            out.append(line);
+            continue;
+        }
+        if (const auto m = kFence.match(line); m.hasMatch()) {
+            fence = m.captured(1).at(0);
+            out.append(line);
+            continue;
+        }
+
+        if (trimmed.startsWith(u"$$"_s)) {
+            if (trimmed.size() > 4 && trimmed.endsWith(u"$$"_s)) {
+                items->append({trimmed.mid(2, trimmed.size() - 4).trimmed(), true});
+                out.append(placeholder(items->size() - 1));
+                continue;
+            }
+            QString latex = trimmed.mid(2);
+            int closing = -1;
+            for (int j = i + 1; j < lines.size() && closing < 0; ++j) {
+                const QString t = lines.at(j).trimmed();
+                if (t.endsWith(u"$$"_s)) {
+                    latex += u'\n' + t.chopped(2);
+                    closing = j;
+                } else {
+                    latex += u'\n' + lines.at(j);
+                }
+            }
+            if (closing >= 0) {
+                items->append({latex.trimmed(), true});
+                out.append(placeholder(items->size() - 1));
+                i = closing;
+                continue;
+            }
+            // Never closed: treat the line as text.
+        }
+
+        // Inline formulas outside code spans, replaced from the end so offsets stay valid.
+        QList<bool> taken(line.size(), false);
+        for (auto it = kCodeSpan.globalMatch(line); it.hasNext();) {
+            const auto m = it.next();
+            for (int k = m.capturedStart(0); k < m.capturedEnd(0); ++k) {
+                taken[k] = true;
+            }
+        }
+        struct Hit {
+            int start;
+            int length;
+            MathItem item;
+        };
+        QList<Hit> hits;
+        for (const auto *pattern : {&kInlineDisplayMath, &kInlineMath}) {
+            for (auto it = pattern->globalMatch(line); it.hasNext();) {
+                const auto m = it.next();
+                bool free = true;
+                for (int k = m.capturedStart(0); k < m.capturedEnd(0) && free; ++k) {
+                    free = !taken[k];
+                }
+                if (!free) {
+                    continue;
+                }
+                for (int k = m.capturedStart(0); k < m.capturedEnd(0); ++k) {
+                    taken[k] = true;
+                }
+                hits.append({int(m.capturedStart(0)), int(m.capturedLength(0)), {m.captured(1), pattern == &kInlineDisplayMath}});
+            }
+        }
+        std::sort(hits.begin(), hits.end(), [](const Hit &a, const Hit &b) {
+            return a.start > b.start;
+        });
+        QString result = line;
+        for (const Hit &hit : std::as_const(hits)) {
+            items->append(hit.item);
+            result.replace(hit.start, hit.length, placeholder(items->size() - 1));
+        }
+        out.append(result);
+    }
+    return out.join(u'\n');
+}
+
+/// Puts formulas back into converted HTML. @p replace gives the HTML for one formula.
+QString restoreMath(QString html, const QList<MathItem> &items, const std::function<QString(int, bool block)> &replace)
+{
+    // Highest index first, so KALAMUSMATH1X never matches inside KALAMUSMATH12X.
+    for (int i = items.size() - 1; i >= 0; --i) {
+        html.replace(u"<p>"_s + placeholder(i) + u"</p>"_s, replace(i, true));
+        html.replace(placeholder(i), replace(i, false));
+    }
+    return html;
+}
+
+qreal screenPixelsPerPoint()
+{
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    return (screen ? screen->logicalDotsPerInchY() : 96.0) / 72.0;
+}
 } // namespace
 
 QString Exporter::toHtmlFragment(const QString &markdown)
@@ -85,7 +217,16 @@ QString Exporter::toHtmlDocument(const QString &markdown, const QString &title)
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
   onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
 )"_s;
-    page += u"</head>\n<body>\n"_s + toHtmlFragment(markdown) + u"</body>\n</html>\n"_s;
+    QList<MathItem> math;
+    const QString body = restoreMath(toHtmlFragment(protectMath(markdown, &math)), math, [&](int i, bool block) -> QString {
+        const MathItem &item = math.at(i);
+        const QString tex = item.latex.toHtmlEscaped();
+        if (block) {
+            return u"<div class=\"math\">$$"_s + tex + u"$$</div>"_s;
+        }
+        return item.display ? u"<span class=\"math\">$$"_s + tex + u"$$</span>"_s : u"<span class=\"math\">$"_s + tex + u"$</span>"_s;
+    });
+    page += u"</head>\n<body>\n"_s + body + u"</body>\n</html>\n"_s;
     return page;
 }
 
@@ -105,12 +246,30 @@ bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const 
     QPrinter printer(QPrinter::HighResolution);
     printer.setOutputFormat(QPrinter::PdfFormat);
     printer.setOutputFileName(outputPath);
-    printer.setPageMargins(QMarginsF(20, 20, 20, 20), QPageLayout::Millimeter);
+    // QTextDocument::print() adds its own 2 cm margin; printer margins would double it.
+    printer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout::Millimeter);
 
     QTextDocument doc;
     doc.setBaseUrl(QUrl::fromLocalFile(baseDir + u'/'));
     doc.setDefaultStyleSheet(kPrintCss);
-    doc.setHtml(toHtmlFragment(markdown));
+    // Formulas become images, rendered at 4x for crisp print.
+    QList<MathItem> math;
+    const qreal pixelSize = doc.defaultFont().pointSizeF() * screenPixelsPerPoint();
+    const QString html = restoreMath(toHtmlFragment(protectMath(markdown, &math)), math, [&](int i, bool block) -> QString {
+        const MathItem &item = math.at(i);
+        const auto metrics = MathRenderer::instance().measure(item.latex, item.display, pixelSize);
+        if (!metrics.ok) {
+            const QString source = (item.display ? u"$$"_s : u"$"_s) + item.latex + (item.display ? u"$$"_s : u"$"_s);
+            return u"<code>"_s + source.toHtmlEscaped() + u"</code>"_s;
+        }
+        const QUrl url(u"kalamus-math:%1"_s.arg(i));
+        doc.addResource(QTextDocument::ImageResource, url, MathRenderer::instance().render(item.latex, item.display, pixelSize, Qt::black, 4.0));
+        const QString img = u"<img src=\"%1\" width=\"%2\" height=\"%3\" style=\"vertical-align: middle\">"_s.arg(url.toString())
+                                .arg(qRound(metrics.width))
+                                .arg(qRound(metrics.ascent + metrics.descent));
+        return block ? u"<p align=\"center\">"_s + img + u"</p>"_s : img;
+    });
+    doc.setHtml(html);
     doc.print(&printer);
 
     if (!QFile::exists(outputPath)) {

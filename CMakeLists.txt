@@ -11,11 +11,14 @@ find_package(ECM ${KF_MIN_VERSION} REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
 
 include(KDEInstallDirs)
+find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
+
+# Third-party code first, so KDE's strict compiler settings below don't apply to it.
+add_subdirectory(3rdparty)
+
 include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(FeatureSummary)
-
-find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
 find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     Config
     ConfigWidgets
@@ -35,6 +38,6 @@ if(BUILD_TESTING)
     add_subdirectory(autotests)
 endif()
 
-install(FILES kalamus.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES io.github.shorawitz.Kalamus.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

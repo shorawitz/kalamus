@@ -124,10 +124,10 @@ private Q_SLOTS:
         editor.loadMarkdown(m_doc);
         placeCursor(editor, u"After"_s);
         const QTextBlock header = editor.document()->findBlockByNumber(2);
-        // Collapsed: every format range beyond the first character is hidden (tiny font).
+        // Collapsed: everything after the first character uses the hidden (zero-width) format.
         bool hidden = false;
         for (const auto &range : header.layout()->formats()) {
-            if (range.start > 0 && range.format.fontPointSize() < 1) {
+            if (range.start > 0 && range.format.fontLetterSpacingType() == QFont::PercentageSpacing && range.format.fontLetterSpacing() < 5) {
                 hidden = true;
             }
         }

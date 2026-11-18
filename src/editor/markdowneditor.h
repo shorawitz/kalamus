@@ -106,6 +106,9 @@ private:
     void paintTable(QPainter &painter, const TableGrid &grid) const;
     bool tableHitTest(const QPoint &pos, QTextCursor *cursor) const;
 
+    // Math: drawing
+    void paintMath(QPainter &painter) const;
+
     MarkdownHighlighter *m_highlighter = nullptr;
     QList<QAction *> m_tableActions;
     bool m_inTable = false;

@@ -6,7 +6,23 @@
 #include <QList>
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
+#include <QTextBlockUserData>
 #include <QTextCursor>
+
+/// A formula the editor paints over its (collapsed) source.
+struct MathSpan {
+    int start = 0; ///< in the block
+    int length = 0;
+    QString latex;
+    bool display = false; ///< $$ display math (centered on its own line)
+};
+
+/// Per-block data the highlighter leaves for the editor's painter.
+class MathBlockData : public QTextBlockUserData
+{
+public:
+    QList<MathSpan> spans;
+};
 
 /**
  * Live-preview styling for Markdown source.
@@ -21,6 +37,9 @@ class MarkdownHighlighter : public QSyntaxHighlighter
     Q_OBJECT
 
 public:
+    /// Line height as a percentage of the font height; the extra space goes below each line.
+    static constexpr int LineHeightPercent = 135;
+
     enum BlockState {
         Normal = 0,
         FencedBacktick = 1,
@@ -30,6 +49,8 @@ public:
         TableHeader = 5,
         TableDelimiter = 6,
         TableRow = 7,
+        MathBlockEnd = 8, ///< the closing $$ line (MathBlock = opening and inner lines)
+        MathLine = 9, ///< $$ ... $$ on one line
     };
 
     static bool isTableState(int state)
@@ -47,13 +68,20 @@ public:
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();
 
+    /// Pixel size formulas are rendered at, matching the editor's text.
+    qreal mathPixelSize(bool display) const;
+
 protected:
     void highlightBlock(const QString &text) override;
 
 private:
     using FormatList = QList<QTextCharFormat>;
 
-    void highlightInline(const QString &text, int from, FormatList &formats, bool active) const;
+    void highlightInline(const QString &text, int from, FormatList &formats, bool active);
+    /// An invisible character that makes its line tall (and wide) enough for a formula.
+    QTextCharFormat mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const;
+    /// For a rendered $$ block: the formula and whether it renders; empty if it doesn't.
+    QString displayMathSource(const QTextBlock &opening, int *lastBlock) const;
     void flush(const FormatList &formats);
     void updateActiveRange();
     void scheduleRehighlight(const QTextBlock &block);
@@ -62,6 +90,7 @@ private:
     QTextCursor m_cursorBlock; // block the text cursor is in
     QTextCursor m_activeFirst; // first block shown as source
     QTextCursor m_activeLast; // last block shown as source
+    QList<MathSpan> m_spans; // collected while highlighting the current block
 
     QTextCharFormat m_hidden;
     QTextCharFormat m_strut; // invisible, but keeps the line at full height
@@ -79,6 +108,7 @@ private:
     QTextCharFormat m_listMarker;
     QTextCharFormat m_taskDone;
     QTextCharFormat m_math;
+    QTextCharFormat m_mathError;
     QTextCharFormat m_table;
     QTextCharFormat m_tableHeader;
     QTextCharFormat m_meta;
