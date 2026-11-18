@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="kalamus" version="1">
+    <MenuBar>
+        <Menu name="file">
+            <Action name="file_open_folder" append="open_merge"/>
+            <Menu name="file_export" append="save_merge">
+                <text>E&amp;xport</text>
+                <Action name="file_export_html"/>
+                <Action name="file_export_pdf"/>
+                <Separator/>
+                <Action name="file_export_docx"/>
+                <Action name="file_export_odt"/>
+            </Menu>
+        </Menu>
+        <Menu name="format">
+            <text>F&amp;ormat</text>
+            <Action name="format_bold"/>
+            <Action name="format_italic"/>
+            <Action name="format_strikethrough"/>
+            <Action name="format_code"/>
+            <Action name="format_link"/>
+            <Separator/>
+            <Action name="format_paragraph"/>
+            <Action name="format_heading_1"/>
+            <Action name="format_heading_2"/>
+            <Action name="format_heading_3"/>
+            <Action name="format_heading_4"/>
+            <Action name="format_heading_5"/>
+            <Action name="format_heading_6"/>
+        </Menu>
+        <Menu name="view">
+            <Action name="view_toggle_files"/>
+        </Menu>
+    </MenuBar>
+    <ToolBar name="mainToolBar">
+        <text>Main Toolbar</text>
+        <Action name="file_new"/>
+        <Action name="file_open"/>
+        <Action name="file_open_folder"/>
+        <Action name="file_save"/>
+        <Separator/>
+        <Action name="format_bold"/>
+        <Action name="format_italic"/>
+        <Action name="format_strikethrough"/>
+        <Action name="format_code"/>
+        <Action name="format_link"/>
+    </ToolBar>
+</gui>
