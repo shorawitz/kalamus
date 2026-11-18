@@ -144,6 +144,49 @@ void MainWindow::setupActions()
         });
     }
 
+    // Tables
+    connect(add(u"table_insert"_s, i18n("Insert &Table"), u"insert-table"_s, QKeySequence(Qt::CTRL | Qt::Key_T)), &QAction::triggered, m_editor, [this] {
+        m_editor->insertTable();
+    });
+    QList<QAction *> tableActions;
+    auto tableAction = [&](const QString &name, const QString &text, const QString &icon, auto slot) {
+        QAction *action = add(name, text, icon, {});
+        connect(action, &QAction::triggered, m_editor, slot);
+        action->setEnabled(false);
+        tableActions.append(action);
+        return action;
+    };
+    tableAction(u"table_row_below"_s, i18n("Insert &Row Below"), u"edit-table-insert-row-below"_s, [this] {
+        m_editor->insertTableRowBelow();
+    });
+    tableAction(u"table_column_after"_s, i18n("Insert &Column After"), u"edit-table-insert-column-right"_s, [this] {
+        m_editor->insertTableColumnAfter();
+    });
+    tableAction(u"table_delete_row"_s, i18n("&Delete Row"), u"edit-table-delete-row"_s, [this] {
+        m_editor->deleteTableRow();
+    });
+    tableAction(u"table_delete_column"_s, i18n("D&elete Column"), u"edit-table-delete-column"_s, [this] {
+        m_editor->deleteTableColumn();
+    });
+    tableAction(u"table_align_left"_s, i18n("Align Column &Left"), u"format-justify-left"_s, [this] {
+        m_editor->setTableColumnAlignment(MarkdownTable::Align::Left);
+    });
+    tableAction(u"table_align_center"_s, i18n("Align Column C&enter"), u"format-justify-center"_s, [this] {
+        m_editor->setTableColumnAlignment(MarkdownTable::Align::Center);
+    });
+    tableAction(u"table_align_right"_s, i18n("Align Column &Right"), u"format-justify-right"_s, [this] {
+        m_editor->setTableColumnAlignment(MarkdownTable::Align::Right);
+    });
+    tableAction(u"table_format"_s, i18n("&Format Table"), u"format-indent-more"_s, [this] {
+        m_editor->formatTable();
+    });
+    m_editor->setTableActions(tableActions);
+    connect(m_editor, &MarkdownEditor::tableContextChanged, this, [tableActions](bool inTable) {
+        for (QAction *action : tableActions) {
+            action->setEnabled(inTable);
+        }
+    });
+
     QAction *toggleFiles = m_treeDock->toggleViewAction();
     toggleFiles->setText(i18n("Show &Files Panel"));
     toggleFiles->setIcon(QIcon::fromTheme(u"sidebar-show-symbolic"_s));

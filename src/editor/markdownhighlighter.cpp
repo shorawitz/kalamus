@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "markdownhighlighter.h"
+#include "markdowntable.h"
 
 #include <QFontDatabase>
 #include <QGuiApplication>
@@ -20,7 +21,6 @@ const QRegularExpression kHeading(uR"(^ {0,3}(#{1,6})(?:[ \t]+|$))"_s);
 const QRegularExpression kRule(uR"(^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$)"_s);
 const QRegularExpression kQuote(uR"(^ {0,3}(?:>[ \t]?)+)"_s);
 const QRegularExpression kList(uR"(^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
-const QRegularExpression kTableDelimiter(uR"(^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$)"_s);
 const QRegularExpression kRefDefinition(uR"(^ {0,3}\[[^\]]+\]:[ \t])"_s);
 
 // Inline patterns
@@ -33,11 +33,6 @@ const QRegularExpression kBold(uR"((\*\*|__)(?=\S)(.+?)(?<=\S)\1)"_s);
 const QRegularExpression kItalic(uR"((?<![*\w])(\*|_)(?=[^\s*_])(.+?)(?<=[^\s*_])\1(?![*\w]))"_s);
 const QRegularExpression kStrike(uR"(~~(?=\S)(.+?)(?<=\S)~~)"_s);
 
-bool isTableRow(const QString &text)
-{
-    const QString t = text.trimmed();
-    return t.size() > 1 && t.startsWith(u'|');
-}
 } // namespace
 
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *document)
@@ -58,6 +53,9 @@ void MarkdownHighlighter::refreshStyles()
     m_hidden.setForeground(Qt::transparent);
     // Tiny enough that hidden markers leave no visible gap.
     m_hidden.setFontPointSize(0.05);
+
+    m_strut = QTextCharFormat();
+    m_strut.setForeground(Qt::transparent);
 
     m_marker = QTextCharFormat();
     m_marker.setForeground(dim);
@@ -128,21 +126,75 @@ void MarkdownHighlighter::refreshStyles()
 
 void MarkdownHighlighter::setActiveBlock(const QTextBlock &block)
 {
-    const QTextBlock old = m_active.isNull() ? QTextBlock() : m_active.block();
-    if (old == block) {
+    m_cursorBlock = QTextCursor(block);
+    updateActiveRange();
+}
+
+bool MarkdownHighlighter::isActive(const QTextBlock &block) const
+{
+    if (m_activeFirst.isNull() || m_activeLast.isNull()) {
+        return false;
+    }
+    const int n = block.blockNumber();
+    return n >= m_activeFirst.block().blockNumber() && n <= m_activeLast.block().blockNumber();
+}
+
+void MarkdownHighlighter::updateActiveRange()
+{
+    if (m_cursorBlock.isNull()) {
         return;
     }
-    m_active = QTextCursor(block);
-    if (old.isValid()) {
-        rehighlightBlock(old);
+    QTextBlock first = m_cursorBlock.block();
+    QTextBlock last = first;
+    if (isTableState(first.userState())) {
+        while (first.userState() != TableHeader && first.previous().isValid() && isTableState(first.previous().userState())) {
+            first = first.previous();
+        }
+        while (last.next().isValid() && (last.next().userState() == TableDelimiter || last.next().userState() == TableRow)) {
+            last = last.next();
+        }
     }
-    rehighlightBlock(block);
+
+    const QTextBlock oldFirst = m_activeFirst.isNull() ? QTextBlock() : m_activeFirst.block();
+    const QTextBlock oldLast = m_activeLast.isNull() ? QTextBlock() : m_activeLast.block();
+    if (oldFirst == first && oldLast == last) {
+        return;
+    }
+    m_activeFirst = QTextCursor(first);
+    m_activeLast = QTextCursor(last);
+
+    auto restyle = [this](QTextBlock from, const QTextBlock &to) {
+        if (!from.isValid() || !to.isValid()) {
+            return;
+        }
+        for (; from.isValid() && from.blockNumber() <= to.blockNumber(); from = from.next()) {
+            rehighlightBlock(from);
+        }
+    };
+    restyle(oldFirst, oldLast);
+    restyle(first, last);
+}
+
+void MarkdownHighlighter::scheduleRehighlight(const QTextBlock &block)
+{
+    if (!block.isValid()) {
+        return;
+    }
+    QMetaObject::invokeMethod(
+        this,
+        [this, tracked = QTextCursor(block)] {
+            if (!tracked.isNull()) {
+                rehighlightBlock(tracked.block());
+                updateActiveRange(); // the block may have just become (or stopped being) a table
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void MarkdownHighlighter::highlightBlock(const QString &text)
 {
     const int prev = qMax(previousBlockState(), 0);
-    const bool active = !m_active.isNull() && currentBlock() == m_active.block();
+    const bool active = isActive(currentBlock());
     FormatList formats(text.size());
 
     auto apply = [&](int start, int length, const QTextCharFormat &fmt) {
@@ -193,6 +245,16 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         return flush(formats);
     }
 
+    // A table header is decided by looking at the next line, which QSyntaxHighlighter
+    // does not re-check when that line changes. Re-style the line above when needed.
+    const bool delimiterRow = MarkdownTable::isDelimiterRow(text);
+    const QTextBlock previous = currentBlock().previous();
+    if (prev == TableHeader && !delimiterRow) {
+        scheduleRehighlight(previous);
+    } else if (delimiterRow && prev != TableHeader && prev != TableDelimiter && prev != TableRow && previous.text().contains(u'|')) {
+        scheduleRehighlight(previous);
+    }
+
     if (const auto m = kFenceOpen.match(text); m.hasMatch()) {
         apply(0, text.size(), m_fence);
         setCurrentBlockState(m.captured(1).at(0) == u'`' ? FencedBacktick : FencedTilde);
@@ -226,22 +288,41 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         return flush(formats);
     }
 
-    if (isTableRow(text) || kTableDelimiter.match(text).hasMatch()) {
-        const bool delimiter = kTableDelimiter.match(text).hasMatch();
-        const QTextBlock next = currentBlock().next();
-        const bool header = !delimiter && next.isValid() && kTableDelimiter.match(next.text()).hasMatch();
-        apply(0, text.size(), header ? m_tableHeader : m_table);
-        if (delimiter) {
-            apply(0, text.size(), m_marker);
+    if (text.contains(u'|')) {
+        int tableState = Normal;
+        if (prev == TableHeader && delimiterRow) {
+            tableState = TableDelimiter;
+        } else if ((prev == TableDelimiter || prev == TableRow) && !text.trimmed().isEmpty()) {
+            tableState = TableRow;
+        } else if (const QTextBlock next = currentBlock().next(); next.isValid() && MarkdownTable::isDelimiterRow(next.text())
+                   && MarkdownTable::splitRow(next.text()).size() == MarkdownTable::splitRow(text).size()) {
+            tableState = TableHeader;
+        }
+
+        if (tableState != Normal) {
+            setCurrentBlockState(tableState);
+            if (!active) {
+                // The editor paints this table as a grid. Collapse the source; rows keep
+                // one invisible full-size character so each grid row gets a line's height.
+                apply(0, text.size(), m_hidden);
+                if (tableState != TableDelimiter) {
+                    formats[0] = m_strut;
+                }
+                return flush(formats);
+            }
+            apply(0, text.size(), tableState == TableHeader ? m_tableHeader : m_table);
+            if (tableState == TableDelimiter) {
+                apply(0, text.size(), m_marker);
+                return flush(formats);
+            }
+            for (int i = 0; i < text.size(); ++i) {
+                if (text.at(i) == u'|' && (i == 0 || text.at(i - 1) != u'\\')) {
+                    apply(i, 1, m_marker);
+                }
+            }
+            highlightInline(text, 0, formats, active);
             return flush(formats);
         }
-        for (int i = 0; i < text.size(); ++i) {
-            if (text.at(i) == u'|' && (i == 0 || text.at(i - 1) != u'\\')) {
-                apply(i, 1, m_marker);
-            }
-        }
-        highlightInline(text, 0, formats, active);
-        return flush(formats);
     }
 
     int offset = 0;

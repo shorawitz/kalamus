@@ -27,12 +27,22 @@ public:
         FencedTilde = 2,
         MathBlock = 3,
         FrontMatter = 4,
+        TableHeader = 5,
+        TableDelimiter = 6,
+        TableRow = 7,
     };
+
+    static bool isTableState(int state)
+    {
+        return state == TableHeader || state == TableDelimiter || state == TableRow;
+    }
 
     explicit MarkdownHighlighter(QTextDocument *document);
 
     /// The block whose markers stay visible. Re-styles the old and the new block.
+    /// Inside a table the whole table becomes active, so it shows as source.
     void setActiveBlock(const QTextBlock &block);
+    bool isActive(const QTextBlock &block) const;
 
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();
@@ -45,10 +55,16 @@ private:
 
     void highlightInline(const QString &text, int from, FormatList &formats, bool active) const;
     void flush(const FormatList &formats);
+    void updateActiveRange();
+    void scheduleRehighlight(const QTextBlock &block);
 
-    QTextCursor m_active; // tracks the active block through edits
+    // QTextCursors track their blocks through edits.
+    QTextCursor m_cursorBlock; // block the text cursor is in
+    QTextCursor m_activeFirst; // first block shown as source
+    QTextCursor m_activeLast; // last block shown as source
 
     QTextCharFormat m_hidden;
+    QTextCharFormat m_strut; // invisible, but keeps the line at full height
     QTextCharFormat m_marker;
     QTextCharFormat m_heading[6];
     QTextCharFormat m_bold;

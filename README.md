@@ -20,6 +20,7 @@ Named after the *calamus*, the reed pen scribes wrote with.
 scripts/install-deps.sh          # once, needs sudo
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
+QT_QPA_PLATFORM=offscreen ctest --test-dir build   # tests
 ./build/bin/kalamus [file-or-folder]
 ```
 
@@ -38,6 +39,9 @@ cmake --build build
 | Ctrl+Shift+O | Open folder in the Files panel |
 | F9 | Show/hide the Files panel |
 | Ctrl+E | Export to PDF |
+| Ctrl+T | Insert a table |
+| Tab / Shift+Tab in a table | Next / previous cell (Tab past the last cell adds a row) |
+| Enter in a table | New row below; Enter on an empty last row leaves the table |
 
 ## Roadmap
 
@@ -45,7 +49,8 @@ cmake --build build
 - [x] Live-formatted editing (headings, emphasis, code, links, lists, tasks, quotes)
 - [x] Files panel (folder tree, Markdown files only)
 - [x] Export: HTML, PDF (built in); Word, ODT (via pandoc)
-- [ ] Tables rendered as a grid when the cursor is outside, with a table editor
+- [x] Tables drawn as a grid when the cursor is outside; aligned source with
+      spreadsheet-style keys inside; Table menu and right-click actions
 - [ ] Math rendered inline (`$…$`, `$$…$$`), likely via MicroTeX
 - [ ] Images shown inline
 - [ ] Code block syntax highlighting (KSyntaxHighlighting) with full-width background

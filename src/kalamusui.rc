@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
-<gui name="kalamus" version="1">
+<gui name="kalamus" version="2">
     <MenuBar>
         <Menu name="file">
             <Action name="file_open_folder" append="open_merge"/>
@@ -28,6 +28,22 @@
             <Action name="format_heading_4"/>
             <Action name="format_heading_5"/>
             <Action name="format_heading_6"/>
+            <Separator/>
+            <Menu name="format_table">
+                <text>&amp;Table</text>
+                <Action name="table_insert"/>
+                <Separator/>
+                <Action name="table_row_below"/>
+                <Action name="table_column_after"/>
+                <Action name="table_delete_row"/>
+                <Action name="table_delete_column"/>
+                <Separator/>
+                <Action name="table_align_left"/>
+                <Action name="table_align_center"/>
+                <Action name="table_align_right"/>
+                <Separator/>
+                <Action name="table_format"/>
+            </Menu>
         </Menu>
         <Menu name="view">
             <Action name="view_toggle_files"/>
@@ -45,5 +61,6 @@
         <Action name="format_strikethrough"/>
         <Action name="format_code"/>
         <Action name="format_link"/>
+        <Action name="table_insert"/>
     </ToolBar>
 </gui>

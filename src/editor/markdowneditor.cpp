@@ -70,6 +70,11 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
 
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] {
         m_highlighter->setActiveBlock(textCursor().block());
+        const bool inTable = isInTable();
+        if (inTable != m_inTable) {
+            m_inTable = inTable;
+            Q_EMIT tableContextChanged(inTable);
+        }
     });
 
     loadMarkdown(QString());
@@ -207,6 +212,9 @@ void MarkdownEditor::setHeading(int level)
 void MarkdownEditor::keyPressEvent(QKeyEvent *event)
 {
     const auto mods = event->modifiers() & ~Qt::KeypadModifier;
+    if (handleTableKey(event)) {
+        return;
+    }
     switch (event->key()) {
     case Qt::Key_Return:
     case Qt::Key_Enter:
@@ -315,6 +323,7 @@ void MarkdownEditor::changeEvent(QEvent *event)
     QTextEdit::changeEvent(event);
     // Palette/font changes also arrive from the constructor, before the highlighter exists.
     if (m_highlighter && (event->type() == QEvent::PaletteChange || event->type() == QEvent::FontChange)) {
+        m_cellCache.clear();
         m_highlighter->refreshStyles();
         updateMargins();
     }
