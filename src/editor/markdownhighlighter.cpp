@@ -26,6 +26,8 @@ namespace
 const QRegularExpression kFenceOpen(uR"(^ {0,3}(`{3,}|~{3,}))"_s);
 const QRegularExpression kFenceClose(uR"(^ {0,3}(`{3,}|~{3,})[ \t]*$)"_s);
 const QRegularExpression kHeading(uR"(^ {0,3}(#{1,6})(?:[ \t]+|$))"_s);
+// The === or --- line under a "setext" heading.
+const QRegularExpression kSetextUnderline(uR"(^ {0,3}(=+|-+)[ \t]*$)"_s);
 const QRegularExpression kRule(uR"(^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$)"_s);
 const QRegularExpression kQuote(uR"(^ {0,3}(?:>[ \t]?)+)"_s);
 const QRegularExpression kList(uR"(^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
@@ -74,7 +76,8 @@ LineInfo classify(const QTextBlock &block, bool styled)
     }
     if ((styled && block.userState() > 0) || (block.blockNumber() == 0 && text == u"---"_s) || kFenceOpen.match(text).hasMatch()
         || text.trimmed().startsWith(u"$$"_s) || kHeading.match(text).hasMatch() || kRule.match(text).hasMatch()
-        || kRefDefinition.match(text).hasMatch()
+        || kRefDefinition.match(text).hasMatch() || kSetextUnderline.match(text).hasMatch()
+        || kSetextUnderline.match(block.next().text()).hasMatch()
         || (text.contains(u'|') && (MarkdownTable::isDelimiterRow(text) || MarkdownTable::isDelimiterRow(block.next().text())))) {
         info.kind = LineInfo::Breaker;
         return info;
@@ -365,6 +368,13 @@ bool MarkdownHighlighter::isActive(const QTextBlock &block) const
     return n >= m_activeFirst.block().blockNumber() && n <= m_activeLast.block().blockNumber();
 }
 
+bool MarkdownHighlighter::isSetextCandidate(const QString &text)
+{
+    // Plain paragraph text: not blank, not a list item or quote (those take the underline as their own).
+    return !text.trimmed().isEmpty() && !kQuote.match(text).hasMatch() && !kList.match(text).hasMatch() && !kHeading.match(text).hasMatch()
+        && !kFenceOpen.match(text).hasMatch() && !kRule.match(text).hasMatch() && !kSetextUnderline.match(text).hasMatch();
+}
+
 void MarkdownHighlighter::updateActiveRange()
 {
     if (m_cursorBlock.isNull()) {
@@ -388,6 +398,10 @@ void MarkdownHighlighter::updateActiveRange()
         while ((last.userState() == FencedBacktick || last.userState() == FencedTilde) && last.next().isValid()) {
             last = last.next();
         }
+    } else if (first.userState() == SetextHeading1 || first.userState() == SetextHeading2) {
+        last = first.next(); // the underline shows while editing the heading
+    } else if (first.userState() == SetextUnderline) {
+        first = first.previous();
     } else if (first.userState() == MathBlock || first.userState() == MathBlockEnd) {
         // A $$ block shows as source in full while the cursor is anywhere in it.
         while (first.previous().isValid() && first.previous().userState() == MathBlock) {
@@ -579,6 +593,19 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         return flush(formats);
     }
 
+    // The underline of a setext heading. The heading line above decides (it looks at this
+    // line); when this line changes, that decision may change too.
+    const bool underline = kSetextUnderline.match(text).hasMatch();
+    const bool underHeading = prev == SetextHeading1 || prev == SetextHeading2;
+    if (underline != underHeading && previous.isValid() && (underHeading || isSetextCandidate(previous.text()))) {
+        scheduleRehighlight(previous);
+    }
+    if (underline && underHeading) {
+        setCurrentBlockState(SetextUnderline);
+        apply(0, text.size(), active ? m_marker : m_hidden);
+        return flush(formats);
+    }
+
     if (kRule.match(text).hasMatch()) {
         apply(0, text.size(), m_marker);
         return flush(formats);
@@ -624,6 +651,15 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
             highlightInline(text, 0, formats, active);
             return flush(formats);
         }
+    }
+
+    // Heading text underlined with === (level 1) or --- (level 2).
+    if (const auto m = kSetextUnderline.match(currentBlock().next().text()); m.hasMatch() && isSetextCandidate(text)) {
+        const int level = m.captured(1).startsWith(u'=') ? 1 : 2;
+        setCurrentBlockState(level == 1 ? SetextHeading1 : SetextHeading2);
+        apply(0, text.size(), m_heading[level - 1]);
+        highlightInline(text, 0, formats, active);
+        return flush(formats);
     }
 
     int offset = 0;

@@ -4,6 +4,7 @@
 // Bold, italic, strikethrough and code that run across the lines of one paragraph.
 
 #include "markdowneditor.h"
+#include "markdownhighlighter.h"
 
 #include <QTest>
 #include <QTextBlock>
@@ -149,6 +150,44 @@ private Q_SLOTS:
         QVERIFY(!isBold(editor, 0, 8));
         QVERIFY(!isBold(editor, 1, 0)); // then
         QVERIFY(isBold(editor, 1, 7)); // real
+    }
+
+    void setextHeadings()
+    {
+        MarkdownEditor editor;
+        load(editor, u"Title\n=====\n\nSection\n-------\n\nAfter a **break\n\n---\n\nrule** above"_s);
+        const qreal body = formatAt(editor, 11, 0).fontPointSize();
+        QVERIFY(formatAt(editor, 0, 0).fontPointSize() > formatAt(editor, 3, 0).fontPointSize()); // H1 > H2
+        QVERIFY(formatAt(editor, 3, 0).fontPointSize() > body || body == 0);
+        QVERIFY(isHidden(editor, 1, 0)); // the underlines hide
+        QVERIFY(isHidden(editor, 4, 0));
+        QVERIFY(!isHidden(editor, 9, 0)); // a --- after a blank line is a rule, still shown
+
+        // Typing the underline turns the line above into a heading; deleting it turns it back.
+        MarkdownEditor second;
+        load(second, u"Plain line\nnext"_s);
+        QTextCursor cursor(second.document()->findBlockByNumber(1));
+        cursor.select(QTextCursor::BlockUnderCursor);
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        cursor.insertText(u"==="_s);
+        second.moveCursor(QTextCursor::End);
+        settle();
+        QCOMPARE(second.document()->firstBlock().userState(), int(MarkdownHighlighter::SetextHeading1));
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        cursor.insertText(u"next"_s);
+        settle();
+        QCOMPARE(second.document()->firstBlock().userState(), int(MarkdownHighlighter::Normal));
+    }
+
+    void headingActionConvertsSetextHeadings()
+    {
+        MarkdownEditor editor;
+        load(editor, u"Title\n---\n\nText"_s);
+        editor.setTextCursor(QTextCursor(editor.document()->firstBlock()));
+        editor.setHeading(1);
+        QVERIFY(editor.markdown().startsWith(u"# Title\n\nText"_s));
     }
 
     void activeLineShowsItsOwnMarkers()

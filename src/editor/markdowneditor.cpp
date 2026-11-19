@@ -261,15 +261,30 @@ void MarkdownEditor::insertCodeBlock(const QString &language)
 
 void MarkdownEditor::setHeading(int level)
 {
-    const QTextBlock block = textCursor().block();
+    QTextBlock block = textCursor().block();
+    if (block.userState() == MarkdownHighlighter::SetextUnderline) {
+        block = block.previous();
+    }
+    const bool setext = block.userState() == MarkdownHighlighter::SetextHeading1 || block.userState() == MarkdownHighlighter::SetextHeading2;
     const auto m = kHeadingPrefix.match(block.text());
-    const int current = m.hasMatch() ? m.capturedLength(1) : 0;
+    int current = m.hasMatch() ? m.capturedLength(1) : 0;
+    if (setext) {
+        current = block.userState() == MarkdownHighlighter::SetextHeading1 ? 1 : 2;
+    }
     if (level == current) {
         level = 0;
     }
 
     QTextCursor c(block);
     c.beginEditBlock();
+    if (setext) {
+        // Drop the === / --- line; the heading becomes # style (or plain text).
+        QTextCursor underline(block);
+        underline.movePosition(QTextCursor::EndOfBlock);
+        underline.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor);
+        underline.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        underline.removeSelectedText();
+    }
     if (m.hasMatch()) {
         c.setPosition(block.position() + m.capturedLength(0), QTextCursor::KeepAnchor);
         c.removeSelectedText();

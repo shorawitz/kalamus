@@ -73,6 +73,9 @@ public:
         TableRow = 7,
         MathBlockEnd = 8, ///< the closing $$ line (MathBlock = opening and inner lines)
         MathLine = 9, ///< $$ ... $$ on one line
+        SetextHeading1 = 10, ///< heading text with === below
+        SetextHeading2 = 11, ///< heading text with --- below
+        SetextUnderline = 12, ///< the === or --- line
     };
 
     static bool isTableState(int state)
@@ -86,6 +89,8 @@ public:
     /// Inside a table the whole table becomes active, so it shows as source.
     void setActiveBlock(const QTextBlock &block);
     bool isActive(const QTextBlock &block) const;
+    /// Text that becomes a heading when === or --- follows it.
+    static bool isSetextCandidate(const QString &text);
 
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "outline.h"
+#include "markdownhighlighter.h"
 
 #include <QRegularExpression>
 #include <QTextBlock>
@@ -42,7 +43,16 @@ QList<OutlineHeading> Outline::headings(const QTextDocument *document)
     for (QTextBlock block = document->firstBlock(); block.isValid(); block = block.next()) {
         // The highlighter gives lines inside code, math and front matter their own state;
         // a heading line is a plain one (or not styled yet).
-        if (block.userState() > 0) {
+        const int state = block.userState();
+        if (state == MarkdownHighlighter::SetextHeading1 || state == MarkdownHighlighter::SetextHeading2) {
+            // Heading text with === or --- under it.
+            const QString title = plainTitle(block.text());
+            if (!title.isEmpty()) {
+                result.append({state == MarkdownHighlighter::SetextHeading1 ? 1 : 2, title, block.blockNumber()});
+            }
+            continue;
+        }
+        if (state > 0) {
             continue;
         }
         const auto m = kHeading.match(block.text());

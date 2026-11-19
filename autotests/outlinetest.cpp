@@ -63,6 +63,14 @@ private Q_SLOTS:
         QCOMPARE(titles(Outline::headings(editor.document())), (QStringList{u"1 One"_s, u"2 Two"_s, u"3 Three"_s, u"1 Four"_s}));
     }
 
+    void setextHeadings()
+    {
+        MarkdownEditor editor;
+        editor.loadMarkdown(u"Top\n===\n\nSub *title*\n---\n\ntext\n\n---\n\n- item\n---\n"_s);
+        QCoreApplication::processEvents();
+        QCOMPARE(titles(Outline::headings(editor.document())), (QStringList{u"1 Top"_s, u"2 Sub title"_s}));
+    }
+
     void sectionAt()
     {
         const QList<OutlineHeading> headings{{1, u"A"_s, 2}, {2, u"B"_s, 5}, {1, u"C"_s, 9}};
