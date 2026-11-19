@@ -6,6 +6,7 @@
 #include "editor/markdowneditor.h"
 #include "exporter.h"
 #include "filetree.h"
+#include "outlinepanel.h"
 
 #include <QAction>
 #include <QDockWidget>
@@ -16,6 +17,7 @@
 #include <QInputDialog>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QTimer>
 
 #include <KActionCollection>
 #include <KConfigGroup>
@@ -43,6 +45,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_editor(new MarkdownEditor(this))
     , m_tree(new FileTree(this))
     , m_treeDock(new QDockWidget(i18n("Files"), this))
+    , m_outline(new OutlinePanel(this))
+    , m_outlineDock(new QDockWidget(i18n("Outline"), this))
+    , m_outlineTimer(new QTimer(this))
 {
     setCentralWidget(m_editor);
 
@@ -52,12 +57,40 @@ MainWindow::MainWindow(QWidget *parent)
     addDockWidget(Qt::LeftDockWidgetArea, m_treeDock);
     resizeDocks({m_treeDock}, {260}, Qt::Horizontal);
 
+    // Outline: a tab next to Files, like Typora's sidebar.
+    m_outlineDock->setObjectName(u"outlineDock"_s);
+    m_outlineDock->setWidget(m_outline);
+    m_outlineDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable);
+    addDockWidget(Qt::LeftDockWidgetArea, m_outlineDock);
+    tabifyDockWidget(m_treeDock, m_outlineDock);
+    setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
+    m_treeDock->raise();
+
+    // Re-read the headings shortly after typing stops.
+    m_outlineTimer->setSingleShot(true);
+    m_outlineTimer->setInterval(250);
+    connect(m_outlineTimer, &QTimer::timeout, this, &MainWindow::refreshOutline);
+    connect(m_editor->document(), &QTextDocument::contentsChanged, m_outlineTimer, qOverload<>(&QTimer::start));
+    connect(m_editor, &QTextEdit::cursorPositionChanged, this, [this] {
+        m_outline->setCurrentBlock(m_editor->textCursor().blockNumber());
+    });
+    connect(m_outline, &OutlinePanel::headingActivated, m_editor, &MarkdownEditor::goToBlock);
+
     connect(m_tree, &FileTree::fileActivated, this, &MainWindow::openPath);
     connect(m_editor->document(), &QTextDocument::modificationChanged, this, &MainWindow::updateCaption);
 
     setupActions();
     resize(1100, 760); // first-run size; setupGUI() restores the saved one
     setupGUI(Default, u"kalamusui.rc"_s);
+
+    // A window layout saved before the Outline panel existed puts it below Files. Make it
+    // a tab once; after that, wherever the user moves it is remembered.
+    KConfigGroup view = KSharedConfig::openConfig()->group(u"View"_s);
+    if (!view.readEntry("OutlinePlaced", false)) {
+        tabifyDockWidget(m_treeDock, m_outlineDock);
+        m_treeDock->raise();
+        view.writeEntry("OutlinePlaced", true);
+    }
 
     setFolder(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
     updateCaption();
@@ -288,11 +321,29 @@ void MainWindow::setupActions()
         KSharedConfig::openConfig()->group(u"Spelling"_s).writeEntry("Language", code);
     });
 
+    QAction *toggleOutline = m_outlineDock->toggleViewAction();
+    toggleOutline->setText(i18n("Show &Outline Panel"));
+    toggleOutline->setIcon(QIcon::fromTheme(u"view-list-tree"_s));
+    ac->addAction(u"view_toggle_outline"_s, toggleOutline);
+    KActionCollection::setDefaultShortcut(toggleOutline, QKeySequence(Qt::SHIFT | Qt::Key_F9));
+    connect(toggleOutline, &QAction::triggered, this, [this](bool on) {
+        if (on) {
+            m_outlineDock->raise(); // bring its tab to the front
+        }
+    });
+
     QAction *toggleFiles = m_treeDock->toggleViewAction();
     toggleFiles->setText(i18n("Show &Files Panel"));
     toggleFiles->setIcon(QIcon::fromTheme(u"sidebar-show-symbolic"_s));
     ac->addAction(u"view_toggle_files"_s, toggleFiles);
     KActionCollection::setDefaultShortcut(toggleFiles, QKeySequence(Qt::Key_F9));
+}
+
+void MainWindow::refreshOutline()
+{
+    m_outlineTimer->stop();
+    m_outline->setHeadings(Outline::headings(m_editor->document()));
+    m_outline->setCurrentBlock(m_editor->textCursor().blockNumber());
 }
 
 void MainWindow::restoreSession()
@@ -371,6 +422,7 @@ bool MainWindow::loadFile(const QString &path)
     }
     m_editor->setBaseDirectory(QFileInfo(path).absolutePath()); // before loading: relative images
     m_editor->loadMarkdown(QString::fromUtf8(file.readAll()));
+    refreshOutline();
     m_path = path;
     m_tree->selectFile(path);
     updateCaption();

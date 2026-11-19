@@ -12,6 +12,8 @@ add_library(kalamuscore STATIC
     editor/imagecache.cpp editor/imagecache.h
     editor/codehighlighter.cpp editor/codehighlighter.h
     editor/spellchecker.cpp editor/spellchecker.h
+    editor/outline.cpp editor/outline.h
+    outlinepanel.cpp outlinepanel.h
 )
 # JKQTMathText's header has const char* default arguments for QString parameters.
 set_source_files_properties(mathrenderer.cpp PROPERTIES COMPILE_OPTIONS "-UQT_NO_CAST_FROM_ASCII")

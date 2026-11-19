@@ -52,6 +52,7 @@ only its LaTeX math renderer is compiled in.
 | Shift+Enter | Plain new line |
 | Ctrl+Shift+O | Open folder in the Files panel |
 | F9 | Show/hide the Files panel |
+| Shift+F9 | Show/hide the Outline panel (click a heading to jump to it) |
 | Shift+F7 | Spell checking on/off (right-click a word for suggestions) |
 | Ctrl+E | Export to PDF |
 | Ctrl+T | Insert a table |
@@ -76,7 +77,9 @@ only its LaTeX math renderer is compiled in.
       Breeze light/dark), full-width background, fences hidden outside the block
 - [x] Spell checking (Sonnet): prose only, never code, math, links or paths;
   suggestions, Add to Dictionary and Ignore on right-click; Tools → Spelling Language
-- [ ] Outline panel (headings), find/replace, recent files
+- [x] Outline panel: headings as a tree next to Files; click to jump, the
+  current section is highlighted
+- [ ] Find/replace, recent files
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/
       when they live outside the document's folder); Insert Image
 - [ ] Settings: font, line width, theme

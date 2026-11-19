@@ -6,6 +6,8 @@
 #include <KXmlGuiWindow>
 
 class FileTree;
+class OutlinePanel;
+class QTimer;
 class MarkdownEditor;
 class QDockWidget;
 
@@ -38,9 +40,13 @@ private:
     void exportTo(const QString &format);
     void updateCaption();
     QString baseDir() const;
+    void refreshOutline();
 
     MarkdownEditor *m_editor;
     FileTree *m_tree;
     QDockWidget *m_treeDock;
+    OutlinePanel *m_outline;
+    QDockWidget *m_outlineDock;
+    QTimer *m_outlineTimer;
     QString m_path;
 };

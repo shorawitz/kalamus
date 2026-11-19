@@ -78,6 +78,9 @@ public:
     /// at @p position is misspelled.
     void addSpellingActions(QMenu *menu, int position);
 
+    /// Put the cursor at the start of line @p blockNumber and scroll it to the top of the view.
+    void goToBlock(int blockNumber);
+
     /// Extra entries for the right-click menu while the cursor is in a table.
     void setTableActions(const QList<QAction *> &actions);
 

@@ -4,6 +4,7 @@
 #include "markdowneditor.h"
 #include "markdownhighlighter.h"
 
+#include <QAbstractTextDocumentLayout>
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QFontMetricsF>
@@ -446,6 +447,21 @@ void MarkdownEditor::ensureFullyLaidOut()
             return;
         }
     }
+}
+
+void MarkdownEditor::goToBlock(int blockNumber)
+{
+    const QTextBlock block = document()->findBlockByNumber(blockNumber);
+    if (!block.isValid()) {
+        return;
+    }
+    QTextCursor cursor(block);
+    setTextCursor(cursor);
+    // The cursor shows the heading's source; lay out everything above it before measuring.
+    ensureFullyLaidOut();
+    const qreal top = document()->documentLayout()->blockBoundingRect(block).top();
+    verticalScrollBar()->setValue(qRound(top - document()->documentMargin() / 2));
+    setFocus(Qt::OtherFocusReason);
 }
 
 void MarkdownEditor::setLimitLineWidth(bool limit)
