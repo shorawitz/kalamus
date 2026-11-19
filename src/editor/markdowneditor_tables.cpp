@@ -508,6 +508,8 @@ void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
         }
     }
     QMenu *menu = createStandardContextMenu();
+    const int position = event->reason() == QContextMenuEvent::Mouse ? cursorForPosition(event->pos()).position() : textCursor().position();
+    addSpellingActions(menu, position);
     if (isInTable() && !m_tableActions.isEmpty()) {
         menu->addSeparator();
         menu->addActions(m_tableActions);

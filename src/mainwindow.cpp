@@ -21,6 +21,7 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KMessageBox>
+#include <KSelectAction>
 #include <KSharedConfig>
 #include <KStandardAction>
 #include <KStandardGuiItem>
@@ -254,6 +255,37 @@ void MainWindow::setupActions()
         m_editor->setLimitLineWidth(on);
         KConfigGroup group = KSharedConfig::openConfig()->group(u"View"_s);
         group.writeEntry("LimitLineWidth", on);
+    });
+
+    // Spelling: on/off and the dictionary, remembered between runs.
+    KConfigGroup spelling = KSharedConfig::openConfig()->group(u"Spelling"_s);
+    QAction *checkSpelling = add(u"tools_spelling_auto"_s, i18n("Check &Spelling"), u"tools-check-spelling"_s,
+                                 QKeySequence(Qt::SHIFT | Qt::Key_F7));
+    checkSpelling->setCheckable(true);
+    checkSpelling->setToolTip(i18n("Underline misspelled words as you type"));
+    m_editor->setSpellCheckingLanguage(spelling.readEntry("Language", QString()));
+    checkSpelling->setChecked(spelling.readEntry("Enabled", true));
+    m_editor->setSpellCheckingEnabled(checkSpelling->isChecked());
+    connect(checkSpelling, &QAction::toggled, this, [this](bool on) {
+        m_editor->setSpellCheckingEnabled(on);
+        KSharedConfig::openConfig()->group(u"Spelling"_s).writeEntry("Enabled", on);
+    });
+
+    auto *language = new KSelectAction(QIcon::fromTheme(u"globe"_s), i18n("Spelling &Language"), this);
+    ac->addAction(u"tools_spelling_language"_s, language);
+    const auto dictionaries = SpellChecker::availableLanguages(); // name -> code
+    for (auto it = dictionaries.cbegin(); it != dictionaries.cend(); ++it) {
+        QAction *item = language->addAction(it.key());
+        item->setData(it.value());
+        if (it.value() == m_editor->spellCheckingLanguage()) {
+            language->setCurrentAction(item);
+        }
+    }
+    language->setEnabled(!dictionaries.isEmpty());
+    connect(language, &KSelectAction::actionTriggered, this, [this](QAction *item) {
+        const QString code = item->data().toString();
+        m_editor->setSpellCheckingLanguage(code);
+        KSharedConfig::openConfig()->group(u"Spelling"_s).writeEntry("Language", code);
     });
 
     QAction *toggleFiles = m_treeDock->toggleViewAction();

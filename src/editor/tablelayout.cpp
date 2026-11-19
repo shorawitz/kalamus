@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "tablelayout.h"
+#include "spellchecker.h"
 
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextOption>
 
@@ -20,6 +23,33 @@ void TableLayout::setFont(const QFont &font)
     if (font != m_font) {
         m_font = font;
         clear();
+    }
+}
+
+void TableLayout::setSpellChecker(const SpellChecker *checker)
+{
+    m_spellChecker = checker;
+    clear();
+}
+
+void TableLayout::underlineMisspelled(QTextDocument *doc) const
+{
+    QTextCharFormat misspelled;
+    misspelled.setUnderlineStyle(QTextCharFormat::SpellCheckUnderline);
+    misspelled.setUnderlineColor(QColor(0xda, 0x44, 0x53));
+    for (QTextBlock block = doc->firstBlock(); block.isValid(); block = block.next()) {
+        const QString text = block.text();
+        const auto words = SpellChecker::wordsToCheck(text);
+        for (const auto &word : words) {
+            QTextCursor cursor(block);
+            cursor.setPosition(block.position() + word.start + 1);
+            if (cursor.charFormat().fontFixedPitch() || !m_spellChecker->isMisspelled(text.mid(word.start, word.length))) {
+                continue; // `code` keeps its spelling
+            }
+            cursor.setPosition(block.position() + word.start);
+            cursor.setPosition(block.position() + word.start + word.length, QTextCursor::KeepAnchor);
+            cursor.mergeCharFormat(misspelled);
+        }
     }
 }
 
@@ -49,6 +79,9 @@ QTextDocument *TableLayout::document(const QString &text, bool header)
     doc->setDefaultFont(f);
     doc->setDocumentMargin(0);
     doc->setMarkdown(text, QTextDocument::MarkdownDialectGitHub);
+    if (m_spellChecker && m_spellChecker->isEnabled()) {
+        underlineMisspelled(doc.get());
+    }
     m_documents.insert(key, doc);
     return doc.get();
 }

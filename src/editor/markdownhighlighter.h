@@ -16,6 +16,8 @@
 #include <QUrl>
 #include <QTextCursor>
 
+class SpellChecker;
+
 /// A formula the editor paints over its (collapsed) source.
 struct MathSpan {
     int start = 0; ///< in the block
@@ -94,6 +96,8 @@ public:
     void setTableLayout(TableLayout *layout);
     /// Where images come from; without one, images show as their alt text.
     void setImageCache(ImageCache *cache);
+    /// Underlines misspelled words in prose; without one, nothing is checked.
+    void setSpellChecker(SpellChecker *checker);
     /// The width tables and images may use.
     /// Returns true when the width changed (the caller then re-styles tables).
     bool setContentWidth(qreal width);
@@ -134,6 +138,7 @@ private:
     KSyntaxHighlighting::State m_codeState;
     TableLayout *m_tableLayout = nullptr;
     ImageCache *m_imageCache = nullptr;
+    SpellChecker *m_spellChecker = nullptr;
     qreal m_contentWidth = 0;
 
     QTextCharFormat m_hidden;
@@ -157,4 +162,5 @@ private:
     QTextCharFormat m_table;
     QTextCharFormat m_tableHeader;
     QTextCharFormat m_meta;
+    QTextCharFormat m_misspelled;
 };

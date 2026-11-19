@@ -5,6 +5,7 @@
 #include "codehighlighter.h"
 #include "markdowntable.h"
 #include "mathrenderer.h"
+#include "spellchecker.h"
 
 #include <QFontDatabase>
 #include <QFontMetricsF>
@@ -141,6 +142,10 @@ void MarkdownHighlighter::refreshStyles()
 
     m_tableHeader = m_table;
     m_tableHeader.setFontWeight(QFont::Bold);
+
+    m_misspelled = QTextCharFormat();
+    m_misspelled.setUnderlineStyle(QTextCharFormat::SpellCheckUnderline);
+    m_misspelled.setUnderlineColor(QColor(0xda, 0x44, 0x53)); // Breeze "negative" red
 
     m_meta = QTextCharFormat();
     m_meta.setFontFamilies({fixed.family()});
@@ -614,6 +619,23 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
             take(m.capturedEnd(0) - marker, marker);
         }
     }
+
+    if (m_spellChecker && m_spellChecker->isEnabled()) {
+        const auto words = SpellChecker::wordsToCheck(text, from);
+        for (const auto &word : words) {
+            if (m_spellChecker->isMisspelled(text.mid(word.start, word.length))) {
+                for (int i = word.start; i < word.start + word.length; ++i) {
+                    formats[i].clearProperty(QTextFormat::FontUnderline); // a link's underline would hide the wave
+                    formats[i].merge(m_misspelled);
+                }
+            }
+        }
+    }
+}
+
+void MarkdownHighlighter::setSpellChecker(SpellChecker *checker)
+{
+    m_spellChecker = checker;
 }
 
 qreal MarkdownHighlighter::mathPixelSize(bool display) const

@@ -44,6 +44,7 @@ only its LaTeX math renderer is compiled in.
 | Ctrl+B / Ctrl+I | Bold / italic (wraps the selection, or toggles it off) |
 | Alt+Shift+5 | Strikethrough |
 | Ctrl+Shift+\` | Inline code |
+| Ctrl+Shift+K | Code block (asks for the language) |
 | Ctrl+K | Link |
 | Ctrl+1 … Ctrl+6, Ctrl+0 | Heading level, paragraph |
 | Enter in a list or quote | Continues it; Enter on an empty item ends it |
@@ -51,6 +52,7 @@ only its LaTeX math renderer is compiled in.
 | Shift+Enter | Plain new line |
 | Ctrl+Shift+O | Open folder in the Files panel |
 | F9 | Show/hide the Files panel |
+| Shift+F7 | Spell checking on/off (right-click a word for suggestions) |
 | Ctrl+E | Export to PDF |
 | Ctrl+T | Insert a table |
 | Ctrl+Shift+I | Insert an image (or paste one, or drop image files) |
@@ -72,7 +74,8 @@ only its LaTeX math renderer is compiled in.
       badges too; missing files get a red underline; fitted to the page in PDF
 - [x] Code blocks coloured by KSyntaxHighlighting (Kate's engine, 300+ languages,
       Breeze light/dark), full-width background, fences hidden outside the block
-- [ ] Spell checking (Sonnet)
+- [x] Spell checking (Sonnet): prose only, never code, math, links or paths;
+  suggestions, Add to Dictionary and Ignore on right-click; Tools → Spelling Language
 - [ ] Outline panel (headings), find/replace, recent files
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/
       when they live outside the document's folder); Insert Image

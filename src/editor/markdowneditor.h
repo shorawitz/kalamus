@@ -5,6 +5,7 @@
 
 #include "imagecache.h"
 #include "markdowntable.h"
+#include "spellchecker.h"
 #include "tablelayout.h"
 
 #include <QHash>
@@ -25,11 +26,16 @@ class QTextDocument;
  * expect from a word processor: Ctrl+B/I/K, headings, list continuation, and
  * tables that show as a grid and edit like a spreadsheet.
  */
+class QMenu;
+
 class MarkdownEditor : public QTextEdit
 {
     Q_OBJECT
 
 public:
+    /// Width of the text column when Limit Line Width is on, in em.
+    static constexpr int ReadableWidthEm = 66;
+
     explicit MarkdownEditor(QWidget *parent = nullptr);
 
     /// Replace the whole document (clears undo history and the modified flag).
@@ -59,6 +65,19 @@ public:
     /// Keep text at a comfortable reading width (centered), or use the full window width.
     void setLimitLineWidth(bool limit);
     bool limitLineWidth() const;
+    /// Spell checking: on or off, and the dictionary ("" = the system's default).
+    void setSpellCheckingEnabled(bool enabled);
+    bool spellCheckingEnabled() const;
+    void setSpellCheckingLanguage(const QString &language);
+    QString spellCheckingLanguage() const;
+    /// The misspelled word at @p position selected in a cursor; a null cursor if there is none.
+    QTextCursor misspelledWordAt(int position) const;
+    /// Stop flagging @p word: for this session, or for good (personal dictionary).
+    void acceptWord(const QString &word, bool permanently);
+    /// Put suggestions, Add to Dictionary and Ignore at the top of @p menu when the word
+    /// at @p position is misspelled.
+    void addSpellingActions(QMenu *menu, int position);
+
     /// Extra entries for the right-click menu while the cursor is in a table.
     void setTableActions(const QList<QAction *> &actions);
 
@@ -94,6 +113,7 @@ protected:
     void insertFromMimeData(const QMimeData *source) override;
     void resizeEvent(QResizeEvent *event) override;
     bool viewportEvent(QEvent *event) override;
+    bool event(QEvent *event) override;
     void changeEvent(QEvent *event) override;
 
 private:
@@ -149,6 +169,8 @@ private:
     void paintCodeBackgrounds(QPainter &painter) const;
     /// Re-style lines with images (after one finished loading).
     void restyleImageBlocks();
+    /// Re-style every line (e.g. after a spelling change), then finish the layout.
+    void restyleAll();
 
     MarkdownHighlighter *m_highlighter = nullptr;
     QList<QAction *> m_tableActions;
@@ -159,6 +181,7 @@ private:
     bool m_imageRestylePending = false;
     bool m_layoutCheckPending = false;
     ImageCache *m_imageCache = nullptr;
+    SpellChecker m_spellChecker;
     std::function<bool()> m_saveRequester;
     mutable QHash<QString, QPixmap> m_scaledImages;
 };

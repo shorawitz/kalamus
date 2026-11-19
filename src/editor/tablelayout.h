@@ -12,6 +12,7 @@
 #include <memory>
 
 class QTextDocument;
+class SpellChecker;
 
 /**
  * Column widths and row heights for a table drawn as a grid. Short columns keep their
@@ -35,6 +36,8 @@ public:
     };
 
     void setFont(const QFont &font);
+    /// Underline misspelled words in cells (call clear() after spelling settings change).
+    void setSpellChecker(const SpellChecker *checker);
     const QFont &font() const;
 
     /// @p availableWidth <= 0 means "unlimited" (natural widths).
@@ -48,7 +51,10 @@ public:
 private:
     QTextDocument *document(const QString &text, bool header);
 
+    void underlineMisspelled(QTextDocument *doc) const;
+
     QFont m_font;
+    const SpellChecker *m_spellChecker = nullptr;
     QHash<QString, std::shared_ptr<QTextDocument>> m_documents;
     QHash<QString, Result> m_results;
 };

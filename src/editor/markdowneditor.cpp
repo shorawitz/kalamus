@@ -8,6 +8,8 @@
 #include <QFontInfo>
 #include <QFontMetricsF>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QTextBlock>
@@ -83,6 +85,8 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     m_highlighter->setTableLayout(m_tableLayout.get());
     m_imageCache = new ImageCache(this);
     m_highlighter->setImageCache(m_imageCache);
+    m_highlighter->setSpellChecker(&m_spellChecker);
+    m_tableLayout->setSpellChecker(&m_spellChecker);
     connect(m_imageCache, &ImageCache::imageReady, this, &MarkdownEditor::restyleImageBlocks);
     connect(m_highlighter, &MarkdownHighlighter::restyled, this, [this] {
         if (!m_layoutCheckPending) {
@@ -459,16 +463,45 @@ bool MarkdownEditor::limitLineWidth() const
 
 void MarkdownEditor::updateMargins()
 {
-    // Readable width: about 52em of text (Typora's default is similar), centered like a page.
-    // Otherwise the text uses the whole window.
+    // Readable width: about 66em of text (860 px at the default font, like Typora), centered
+    // like a page. Otherwise the text uses the whole window.
     int side = 0;
     if (m_limitLineWidth) {
         const qreal em = QFontInfo(font()).pixelSize();
-        const int maxWidth = qRound(em * 52 + 2 * document()->documentMargin());
+        const int maxWidth = qRound(em * ReadableWidthEm + 2 * document()->documentMargin());
         side = qMax(0, (width() - maxWidth) / 2);
     }
     setViewportMargins(side, 0, side, 0);
     relayoutTables();
+}
+
+bool MarkdownEditor::event(QEvent *event)
+{
+    // The side margins belong to the editor, not its viewport, and Qt ignores the mouse
+    // there. Scroll with the wheel anywhere on the page, and let a click or drag in a
+    // margin act at the nearest edge of the text.
+    switch (event->type()) {
+    case QEvent::Wheel:
+        wheelEvent(static_cast<QWheelEvent *>(event));
+        return true;
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    case QEvent::MouseMove: {
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        const QRect area = viewport()->geometry();
+        QPointF pos = mouse->position() - area.topLeft();
+        pos.setX(qBound(0.0, pos.x(), qreal(area.width() - 1)));
+        pos.setY(qBound(0.0, pos.y(), qreal(area.height() - 1)));
+        QMouseEvent forwarded(mouse->type(), pos, viewport()->mapToGlobal(pos), mouse->button(), mouse->buttons(),
+                              mouse->modifiers(), mouse->pointingDevice());
+        QCoreApplication::sendEvent(viewport(), &forwarded);
+        return true;
+    }
+    default:
+        break;
+    }
+    return QTextEdit::event(event);
 }
 
 bool MarkdownEditor::viewportEvent(QEvent *event)

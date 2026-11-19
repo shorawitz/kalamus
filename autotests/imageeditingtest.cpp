@@ -5,12 +5,14 @@
 #include "markdownhighlighter.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QApplication>
 #include <QBuffer>
 #include <QDir>
 #include <QTemporaryDir>
 #include <QScrollBar>
 #include <QTest>
 #include <QTextBlock>
+#include <QWheelEvent>
 
 using namespace Qt::StringLiterals;
 
@@ -95,6 +97,31 @@ private Q_SLOTS:
                      qPrintable(u"document %1 wider than viewport %2"_s.arg(editor.document()->size().width()).arg(editor.viewport()->width())));
             QVERIFY(!editor.horizontalScrollBar()->isVisible());
         }
+    }
+
+    void marginsScrollAndClick()
+    {
+        // The side margins sit outside the viewport; the wheel and clicks must still work there.
+        MarkdownEditor editor;
+        editor.resize(1600, 400);
+        editor.show();
+        QStringList lines;
+        for (int i = 0; i < 200; ++i) {
+            lines.append(u"Line %1"_s.arg(i));
+        }
+        editor.loadMarkdown(lines.join(u"\n\n"_s));
+        QTest::qWait(50);
+        QVERIFY(editor.viewport()->x() > 100);
+
+        const QPointF inMargin(20, 200);
+        QWheelEvent wheel(inMargin, editor.mapToGlobal(inMargin), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&editor, &wheel);
+        QVERIFY(editor.verticalScrollBar()->value() > 0);
+
+        QTest::mouseClick(&editor, Qt::LeftButton, Qt::NoModifier, QPoint(20, 5));
+        QCOMPARE(editor.textCursor().positionInBlock(), 0);
+        QVERIFY(editor.textCursor().blockNumber() > 0);
     }
 
     void cursorOnTheLineShowsSource()
