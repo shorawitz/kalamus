@@ -4,7 +4,9 @@
 #include "exporter.h"
 #include "mathrenderer.h"
 
+#include <QDir>
 #include <QFile>
+#include <QImageReader>
 #include <QGuiApplication>
 #include <QRegularExpression>
 #include <QScreen>
@@ -173,6 +175,51 @@ QString restoreMath(QString html, const QList<MathItem> &items, const std::funct
     return html;
 }
 
+/**
+ * Loads the document's local images into @p doc (Qt's own loader trips over encoded
+ * paths) and gives large ones a width that fits the page. Images that can't be loaded,
+ * such as web images, print as their alt text instead of a broken-image icon.
+ */
+QString embedImages(const QString &html, const QString &baseDir, const QPrinter &printer, QTextDocument &doc)
+{
+    // QTextDocument::print() lays out in screen pixels with a 2 cm margin on each side.
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const qreal dpi = screen ? screen->logicalDotsPerInchX() : 96.0;
+    const qreal maxWidth = (printer.pageLayout().fullRect(QPageLayout::Inch).width() - 2 * 2.0 / 2.54) * dpi;
+
+    static const QRegularExpression img(uR"re(<img src="([^"]+)"([^>]*)>)re"_s);
+    static const QRegularExpression alt(uR"re(alt="([^"]*)")re"_s);
+    QString out;
+    qsizetype last = 0;
+    int index = 0;
+    for (auto it = img.globalMatch(html); it.hasNext();) {
+        const auto m = it.next();
+        out += QStringView(html).mid(last, m.capturedStart(0) - last);
+        last = m.capturedEnd(0);
+        const QString src = m.captured(1);
+        if (src.startsWith(u"kalamus-math:"_s)) {
+            out += m.captured(0);
+            continue;
+        }
+        QImage image;
+        if (!src.contains(u"://"_s) && !src.startsWith(u"data:"_s)) {
+            QImageReader reader(QDir(baseDir).filePath(QUrl::fromPercentEncoding(src.toUtf8())));
+            reader.setAutoTransform(true);
+            image = reader.read();
+        }
+        if (image.isNull()) {
+            out += u"<i>"_s + alt.match(m.captured(2)).captured(1) + u"</i>"_s;
+            continue;
+        }
+        const QUrl url(u"kalamus-image:%1"_s.arg(index++));
+        doc.addResource(QTextDocument::ImageResource, url, image);
+        const qreal width = qMin<qreal>(image.width(), maxWidth);
+        out += u"<img src=\""_s + url.toString() + u"\" width=\""_s + QString::number(qFloor(width)) + u"\">"_s;
+    }
+    out += QStringView(html).mid(last);
+    return out;
+}
+
 qreal screenPixelsPerPoint()
 {
     const QScreen *screen = QGuiApplication::primaryScreen();
@@ -269,7 +316,7 @@ bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const 
                                 .arg(qRound(metrics.ascent + metrics.descent));
         return block ? u"<p align=\"center\">"_s + img + u"</p>"_s : img;
     });
-    doc.setHtml(html);
+    doc.setHtml(embedImages(html, baseDir, printer, doc));
     doc.print(&printer);
 
     if (!QFile::exists(outputPath)) {

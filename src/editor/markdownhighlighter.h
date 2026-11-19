@@ -6,9 +6,12 @@
 #include <QList>
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
+#include "imagecache.h"
 #include "tablelayout.h"
 
+#include <QSizeF>
 #include <QTextBlockUserData>
+#include <QUrl>
 #include <QTextCursor>
 
 /// A formula the editor paints over its (collapsed) source.
@@ -19,11 +22,21 @@ struct MathSpan {
     bool display = false; ///< $$ display math (centered on its own line)
 };
 
+/// An image the editor paints over its (collapsed) source.
+struct ImageSpan {
+    int start = 0; ///< in the block
+    int length = 0;
+    QUrl url; ///< resolved location
+    QSizeF size; ///< as displayed, in logical pixels
+    bool tall = false; ///< taller than a text line: sits on the line's bottom, not the baseline
+};
+
 /// Per-block data the highlighter leaves for the editor's painter.
-class MathBlockData : public QTextBlockUserData
+class BlockRenderData : public QTextBlockUserData
 {
 public:
-    QList<MathSpan> spans;
+    QList<MathSpan> math;
+    QList<ImageSpan> images;
 };
 
 /**
@@ -73,11 +86,14 @@ public:
     /// Pixel size formulas are rendered at, matching the editor's text.
     qreal mathPixelSize(bool display) const;
 
-    /// Tables drawn as grids: the shared layout engine and the width they may use.
+    /// Tables drawn as grids: the shared layout engine.
     void setTableLayout(TableLayout *layout);
+    /// Where images come from; without one, images show as their alt text.
+    void setImageCache(ImageCache *cache);
+    /// The width tables and images may use.
     /// Returns true when the width changed (the caller then re-styles tables).
-    bool setTableWidth(qreal width);
-    qreal tableWidth() const;
+    bool setContentWidth(qreal width);
+    qreal contentWidth() const;
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -87,7 +103,9 @@ private:
 
     void highlightInline(const QString &text, int from, FormatList &formats, bool active);
     /// An invisible character that makes its line tall (and wide) enough for a formula.
-    QTextCharFormat mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const;
+    /// With @p fitTotalHeight the line is sized by ascent + descent only (for centered or
+    /// bottom-aligned objects); otherwise ascent and descent must each fit.
+    QTextCharFormat mathStrut(qreal ascent, qreal descent, qreal width, QChar character, bool fitTotalHeight = false) const;
     /// An invisible character that makes a table row's source line as tall as the grid row.
     QTextCharFormat tableRowStrut(const QTextBlock &block) const;
     /// Font size whose line (with our line spacing) is @p height pixels tall.
@@ -102,9 +120,11 @@ private:
     QTextCursor m_cursorBlock; // block the text cursor is in
     QTextCursor m_activeFirst; // first block shown as source
     QTextCursor m_activeLast; // last block shown as source
-    QList<MathSpan> m_spans; // collected while highlighting the current block
+    QList<MathSpan> m_mathSpans; // collected while highlighting the current block
+    QList<ImageSpan> m_imageSpans;
     TableLayout *m_tableLayout = nullptr;
-    qreal m_tableWidth = 0;
+    ImageCache *m_imageCache = nullptr;
+    qreal m_contentWidth = 0;
 
     QTextCharFormat m_hidden;
     QTextCharFormat m_strut; // invisible, but keeps the line at full height
@@ -118,6 +138,7 @@ private:
     QTextCharFormat m_fence;
     QTextCharFormat m_link;
     QTextCharFormat m_image;
+    QTextCharFormat m_imageError;
     QTextCharFormat m_quote;
     QTextCharFormat m_listMarker;
     QTextCharFormat m_taskDone;

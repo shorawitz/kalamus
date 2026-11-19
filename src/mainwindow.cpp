@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QImageReader>
 #include <QSaveFile>
 #include <QStandardPaths>
 
@@ -144,6 +145,31 @@ void MainWindow::setupActions()
         });
     }
 
+    // Images
+    connect(add(u"insert_image"_s, i18n("Insert &Image…"), u"insert-image"_s, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I)),
+            &QAction::triggered, this, [this] {
+                QStringList patterns;
+                const auto formats = QImageReader::supportedImageFormats();
+                for (const QByteArray &format : formats) {
+                    patterns.append(u"*."_s + QString::fromLatin1(format));
+                }
+                const QList<QUrl> files = QFileDialog::getOpenFileUrls(this,
+                                                                       i18n("Insert Image"),
+                                                                       QUrl::fromLocalFile(baseDir()),
+                                                                       i18n("Images (%1)", patterns.join(u' ')));
+                if (!files.isEmpty()) {
+                    m_editor->insertImageFiles(files);
+                }
+            });
+    m_editor->setSaveRequester([this] {
+        const auto answer = KMessageBox::questionTwoActions(this,
+                                                            i18n("Images are stored next to the document, in its assets folder. Save the document first?"),
+                                                            i18n("Save Document"),
+                                                            KStandardGuiItem::save(),
+                                                            KStandardGuiItem::cancel());
+        return answer == KMessageBox::PrimaryAction && saveAs();
+    });
+
     // Tables
     connect(add(u"table_insert"_s, i18n("Insert &Table"), u"insert-table"_s, QKeySequence(Qt::CTRL | Qt::Key_T)), &QAction::triggered, m_editor, [this] {
         m_editor->insertTable();
@@ -240,6 +266,7 @@ void MainWindow::newFile()
         return;
     }
     m_path.clear();
+    m_editor->setBaseDirectory(QString());
     m_editor->loadMarkdown(QString());
     updateCaption();
 }
@@ -279,6 +306,7 @@ bool MainWindow::loadFile(const QString &path)
         KMessageBox::error(this, i18n("Could not open %1:\n%2", path, file.errorString()));
         return false;
     }
+    m_editor->setBaseDirectory(QFileInfo(path).absolutePath()); // before loading: relative images
     m_editor->loadMarkdown(QString::fromUtf8(file.readAll()));
     m_path = path;
     m_tree->selectFile(path);
@@ -302,6 +330,7 @@ bool MainWindow::writeFile(const QString &path)
         return false;
     }
     m_path = path;
+    m_editor->setBaseDirectory(QFileInfo(path).absolutePath());
     m_editor->document()->setModified(false);
     m_tree->selectFile(path);
     updateCaption();

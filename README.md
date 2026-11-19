@@ -53,6 +53,7 @@ only its LaTeX math renderer is compiled in.
 | F9 | Show/hide the Files panel |
 | Ctrl+E | Export to PDF |
 | Ctrl+T | Insert a table |
+| Ctrl+Shift+I | Insert an image (or paste one, or drop image files) |
 | Tab / Shift+Tab in a table | Next / previous cell (Tab past the last cell adds a row) |
 | Enter in a table | New row below; Enter on an empty last row leaves the table |
 
@@ -67,11 +68,13 @@ only its LaTeX math renderer is compiled in.
 - [x] Math: `$…$` and `$$…$$` drawn as formulas (JKQTMathText) when the cursor is
       elsewhere, LaTeX source when it's in them; broken formulas get a red underline;
       exported as KaTeX in HTML and as images in PDF
-- [ ] Images shown inline
+- [x] Images drawn in place (local, web, data:), scaled to the text width; linked
+      badges too; missing files get a red underline; fitted to the page in PDF
 - [ ] Code block syntax highlighting (KSyntaxHighlighting) with full-width background
 - [ ] Spell checking (Sonnet)
 - [ ] Outline panel (headings), find/replace, recent files
-- [ ] Paste images from the clipboard into an `assets/` folder
+- [x] Paste images into an `assets/` folder; drop image files (copied into assets/
+      when they live outside the document's folder); Insert Image
 - [ ] Settings: font, line width, theme
 
 ### Later

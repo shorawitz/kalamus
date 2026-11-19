@@ -54,6 +54,24 @@ private Q_SLOTS:
         }
     }
 
+    void pdfFitsLargeImages()
+    {
+        QTemporaryDir dir;
+        QImage image(3000, 500, QImage::Format_RGB32);
+        image.fill(Qt::blue);
+        QVERIFY(image.save(dir.filePath(u"wide pic.png"_s)));
+        const QString out = dir.filePath(u"images.pdf"_s);
+        QString error;
+        const QString plain = dir.filePath(u"plain.pdf"_s);
+        QVERIFY(Exporter::exportPdf(u"Before\n\nAfter\n"_s, dir.path(), plain, &error));
+        QVERIFY2(Exporter::exportPdf(u"Before\n\n![wide](<wide pic.png>)\n\n![web](https://example.com/x.png)\n\nAfter\n"_s, dir.path(), out, &error),
+                 qPrintable(error));
+        QVERIFY(QFileInfo(out).size() > QFileInfo(plain).size() + 1000); // the picture is embedded
+        if (const QString keep = qEnvironmentVariable("KALAMUS_KEEP_EXPORTS"); !keep.isEmpty()) {
+            QFile::copy(out, keep + u"/images.pdf"_s);
+        }
+    }
+
     void pdfIsWritten()
     {
         QTemporaryDir dir;

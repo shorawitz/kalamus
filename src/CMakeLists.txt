@@ -5,10 +5,11 @@
 add_library(kalamuscore STATIC
     exporter.cpp exporter.h
     mathrenderer.cpp mathrenderer.h
-    editor/markdowneditor.cpp editor/markdowneditor_tables.cpp editor/markdowneditor_math.cpp editor/markdowneditor.h
+    editor/markdowneditor.cpp editor/markdowneditor_tables.cpp editor/markdowneditor_math.cpp editor/markdowneditor_images.cpp editor/markdowneditor.h
     editor/markdownhighlighter.cpp editor/markdownhighlighter.h
     editor/markdowntable.cpp editor/markdowntable.h
     editor/tablelayout.cpp editor/tablelayout.h
+    editor/imagecache.cpp editor/imagecache.h
 )
 # JKQTMathText's header has const char* default arguments for QString parameters.
 set_source_files_properties(mathrenderer.cpp PROPERTIES COMPILE_OPTIONS "-UQT_NO_CAST_FROM_ASCII")
@@ -16,7 +17,9 @@ target_include_directories(kalamuscore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAK
 target_link_libraries(kalamuscore PUBLIC
     Qt6::Widgets
     Qt6::PrintSupport
+    Qt6::Network
     KF6::I18n
+    KF6::WidgetsAddons
     PkgConfig::CMARK_GFM
     ${CMARK_GFM_EXTENSIONS_LIBRARY}
     jkqtmathtext

@@ -32,7 +32,10 @@ const QRegularExpression kRefDefinition(uR"(^ {0,3}\[[^\]]+\]:[ \t])"_s);
 const QRegularExpression kCodeSpan(uR"((`+)(.+?)(?<!`)\1(?!`))"_s);
 const QRegularExpression kInlineDisplayMath(uR"((?<![\\$])\$\$(?=\S)([^$\n]+?)(?<=\S)\$\$)"_s);
 const QRegularExpression kInlineMath(uR"((?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$]))"_s);
-const QRegularExpression kImage(uR"(!\[([^\]]*)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
+// Destinations may be <in angle brackets> (then they can contain spaces).
+const QRegularExpression kImage(uR"(!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
+// [![alt](image)](link), as in README badges.
+const QRegularExpression kLinkedImage(uR"(\[!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 const QRegularExpression kLink(uR"((?<!!)\[([^\]]+)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 const QRegularExpression kAutoLink(uR"(<(https?://[^>\s]+)>|\bhttps?://[^\s<>()]+[^\s<>().,;:!?'")\]])"_s);
 const QRegularExpression kBold(uR"((\*\*|__)(?=\S)(.+?)(?<=\S)\1)"_s);
@@ -104,6 +107,10 @@ void MarkdownHighlighter::refreshStyles()
     m_image = QTextCharFormat();
     m_image.setForeground(pal.color(QPalette::Link));
     m_image.setFontItalic(true);
+
+    m_imageError = m_image;
+    m_imageError.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+    m_imageError.setUnderlineColor(QColor(0xda, 0x44, 0x53));
 
     m_quote = QTextCharFormat();
     m_quote.setForeground(dim);
@@ -230,7 +237,8 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     };
 
     setCurrentBlockState(Normal);
-    m_spans.clear();
+    m_mathSpans.clear();
+    m_imageSpans.clear();
 
     // YAML front matter at the very top of the file.
     if (currentBlock().blockNumber() == 0 && text == u"---"_s) {
@@ -267,8 +275,8 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         while (opening.previous().isValid() && opening.previous().userState() == MathBlock) {
             opening = opening.previous();
         }
-        const auto *data = dynamic_cast<MathBlockData *>(opening.userData());
-        const bool rendered = !active && data && !data->spans.isEmpty() && data->spans.first().display;
+        const auto *data = dynamic_cast<BlockRenderData *>(opening.userData());
+        const bool rendered = !active && data && !data->math.isEmpty() && data->math.first().display;
         apply(0, text.size(), rendered ? m_hidden : m_math);
         return flush(formats);
     }
@@ -304,8 +312,8 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
                 // Collapse the source to one line tall enough for the formula; the editor paints it.
                 constexpr qreal padding = 4;
                 apply(0, text.size(), m_hidden);
-                formats[0] = mathStrut(metrics.ascent + padding, metrics.descent + padding, 0, text.at(0));
-                m_spans.append({0, int(text.size()), latex, true});
+                formats[0] = mathStrut(metrics.ascent + padding, metrics.descent + padding, 0, text.at(0), true);
+                m_mathSpans.append({0, int(text.size()), latex, true});
                 return flush(formats);
             }
         }
@@ -452,8 +460,45 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
             // Hide the source; its first character reserves the formula's width and height.
             apply(start, length, m_hidden);
             formats[start] = mathStrut(metrics.ascent, metrics.descent, metrics.width, text.at(start));
-            m_spans.append({start, length, latex, false});
+            m_mathSpans.append({start, length, latex, false});
         }
+    }
+
+    // Images: drawn in place when the cursor is elsewhere and the image has loaded.
+    // Their hidden source reserves the image's width and height on the line.
+    auto renderImage = [&](int start, int length, const QString &destination) {
+        if (active || !m_imageCache) {
+            return false;
+        }
+        const QUrl url = m_imageCache->resolve(destination);
+        if (m_imageCache->status(url) != ImageCache::Status::Ready) {
+            return false;
+        }
+        const QImage image = m_imageCache->image(url);
+        QSizeF size = QSizeF(image.size()) / image.devicePixelRatio();
+        if (m_contentWidth > 0 && size.width() > m_contentWidth) {
+            size = size.scaled(m_contentWidth, size.height() * m_contentWidth / size.width(), Qt::KeepAspectRatio);
+        }
+        // Small images (badges, icons) sit on the baseline like text. Taller ones get a line
+        // exactly their height and sit on its bottom, so no gap opens up below them.
+        const QFontMetricsF metrics(document()->defaultFont());
+        const bool tall = size.height() > metrics.ascent() + metrics.descent();
+        apply(start, length, m_hidden);
+        formats[start] = mathStrut(size.height(), 0, size.width(), text.at(start), tall);
+        m_imageSpans.append({start, length, url, size, tall});
+        take(start, length);
+        return true;
+    };
+    auto imageFailed = [&](const QString &destination) {
+        return !active && m_imageCache && m_imageCache->status(m_imageCache->resolve(destination)) == ImageCache::Status::Failed;
+    };
+
+    for (auto it = kLinkedImage.globalMatch(text, from); it.hasNext();) {
+        const auto m = it.next();
+        if (!isFree(m.capturedStart(0), m.capturedLength(0))) {
+            continue;
+        }
+        renderImage(m.capturedStart(0), m.capturedLength(0), m.captured(2));
     }
 
     for (auto it = kImage.globalMatch(text, from); it.hasNext();) {
@@ -461,8 +506,11 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
         if (!isFree(m.capturedStart(0), m.capturedLength(0))) {
             continue;
         }
+        if (renderImage(m.capturedStart(0), m.capturedLength(0), m.captured(2))) {
+            continue;
+        }
         syntax(m.capturedStart(0), 2); // ![
-        apply(m.capturedStart(1), m.capturedLength(1), m_image);
+        apply(m.capturedStart(1), m.capturedLength(1), imageFailed(m.captured(2)) ? m_imageError : m_image);
         syntax(m.capturedEnd(1), m.capturedEnd(0) - m.capturedEnd(1)); // ](url)
         take(m.capturedStart(0), m.capturedLength(0));
     }
@@ -529,19 +577,24 @@ void MarkdownHighlighter::setTableLayout(TableLayout *layout)
     m_tableLayout = layout;
 }
 
-bool MarkdownHighlighter::setTableWidth(qreal width)
+void MarkdownHighlighter::setImageCache(ImageCache *cache)
+{
+    m_imageCache = cache;
+}
+
+bool MarkdownHighlighter::setContentWidth(qreal width)
 {
     width = std::floor(width);
-    if (qFuzzyCompare(width, m_tableWidth)) {
+    if (qFuzzyCompare(width, m_contentWidth)) {
         return false;
     }
-    m_tableWidth = width;
+    m_contentWidth = width;
     return true;
 }
 
-qreal MarkdownHighlighter::tableWidth() const
+qreal MarkdownHighlighter::contentWidth() const
 {
-    return m_tableWidth;
+    return m_contentWidth;
 }
 
 qreal MarkdownHighlighter::pointSizeForLineHeight(qreal height) const
@@ -580,14 +633,14 @@ QTextCharFormat MarkdownHighlighter::tableRowStrut(const QTextBlock &block) cons
     if (!table || row < 0) {
         return format;
     }
-    const auto layout = m_tableLayout->compute(*table, m_tableWidth);
+    const auto layout = m_tableLayout->compute(*table, m_contentWidth);
     if (row < layout.rowHeights.size()) {
         format.setFontPointSize(pointSizeForLineHeight(layout.rowHeights.at(row)));
     }
     return format;
 }
 
-QTextCharFormat MarkdownHighlighter::mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const
+QTextCharFormat MarkdownHighlighter::mathStrut(qreal ascent, qreal descent, qreal width, QChar character, bool fitTotalHeight) const
 {
     const QFont base = document()->defaultFont();
     const QFontMetricsF metrics(base);
@@ -596,8 +649,11 @@ QTextCharFormat MarkdownHighlighter::mathStrut(qreal ascent, qreal descent, qrea
     // only the total height matters (width == 0).
     const qreal fontHeight = metrics.ascent() + metrics.descent();
     const qreal below = metrics.descent() + fontHeight * (LineHeightPercent - 100) / 100.0;
-    const qreal scale = width > 0 ? qMax<qreal>(1.0, qMax(ascent / metrics.ascent(), descent / below))
-                                  : qMax<qreal>(1.0, (ascent + descent) / fontHeight);
+    // In total-height mode the object also covers the line spacing Qt adds below the line,
+    // so the line plus its spacing is exactly the object's height.
+    const qreal scale = (width > 0 && !fitTotalHeight)
+        ? qMax<qreal>(1.0, qMax(ascent / metrics.ascent(), descent / below))
+        : qMax<qreal>(1.0, (ascent + descent) / (fontHeight * LineHeightPercent / 100.0));
     QFont font = base;
     font.setPointSizeF(base.pointSizeF() * scale);
 
@@ -628,11 +684,12 @@ QString MarkdownHighlighter::displayMathSource(const QTextBlock &opening, int *l
 
 void MarkdownHighlighter::flush(const FormatList &formats)
 {
-    if (m_spans.isEmpty()) {
+    if (m_mathSpans.isEmpty() && m_imageSpans.isEmpty()) {
         setCurrentBlockUserData(nullptr);
     } else {
-        auto *data = new MathBlockData;
-        data->spans = m_spans;
+        auto *data = new BlockRenderData;
+        data->math = m_mathSpans;
+        data->images = m_imageSpans;
         setCurrentBlockUserData(data);
     }
 

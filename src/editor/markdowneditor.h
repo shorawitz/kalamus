@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include "imagecache.h"
 #include "markdowntable.h"
 #include "tablelayout.h"
 
 #include <QHash>
+#include <QPixmap>
 #include <QTextBlock>
 #include <QTextEdit>
 
@@ -35,6 +37,22 @@ public:
     QString markdown() const;
 
     bool isInTable() const;
+
+    /// The document's folder, for relative image paths ("" for an unsaved document).
+    void setBaseDirectory(const QString &directory);
+    QString baseDirectory() const;
+
+    /// Called when an image needs a saved document to live next to; returns true once
+    /// the document has a folder (e.g. after asking the user to save it).
+    void setSaveRequester(const std::function<bool()> &requester);
+
+    /// Insert links to image files at the cursor. Files inside the document's folder are
+    /// linked where they are; others are copied into its assets/ folder first.
+    bool insertImageFiles(const QList<QUrl> &files);
+    /// Save image data (e.g. a pasted screenshot) into assets/ and link it at the cursor.
+    bool insertImageData(const QImage &image);
+
+    static bool isImageFile(const QString &path);
 
     /// Keep text at a comfortable reading width (centered), or use the full window width.
     void setLimitLineWidth(bool limit);
@@ -67,6 +85,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
+    bool canInsertFromMimeData(const QMimeData *source) const override;
+    void insertFromMimeData(const QMimeData *source) override;
     void resizeEvent(QResizeEvent *event) override;
     bool viewportEvent(QEvent *event) override;
     void changeEvent(QEvent *event) override;
@@ -114,8 +134,10 @@ private:
     void paintTable(QPainter &painter, const TableGrid &grid) const;
     bool tableHitTest(const QPoint &pos, QTextCursor *cursor) const;
 
-    // Math: drawing
-    void paintMath(QPainter &painter) const;
+    // Math and images: drawing
+    void paintInlineObjects(QPainter &painter) const;
+    /// Re-style lines with images (after one finished loading).
+    void restyleImageBlocks();
 
     MarkdownHighlighter *m_highlighter = nullptr;
     QList<QAction *> m_tableActions;
@@ -123,4 +145,8 @@ private:
     std::unique_ptr<TableLayout> m_tableLayout;
     bool m_limitLineWidth = true;
     bool m_relayoutPending = false;
+    bool m_imageRestylePending = false;
+    ImageCache *m_imageCache = nullptr;
+    std::function<bool()> m_saveRequester;
+    mutable QHash<QString, QPixmap> m_scaledImages;
 };

@@ -13,7 +13,9 @@
 #include <QScrollBar>
 #include <QTextLayout>
 
-void MarkdownEditor::paintMath(QPainter &painter) const
+using namespace Qt::StringLiterals;
+
+void MarkdownEditor::paintInlineObjects(QPainter &painter) const
 {
     QAbstractTextDocumentLayout *layout = document()->documentLayout();
     const QPointF offset(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
@@ -27,11 +29,33 @@ void MarkdownEditor::paintMath(QPainter &painter) const
         if (rect.top() > bottom) {
             break;
         }
-        const auto *data = dynamic_cast<MathBlockData *>(block.userData());
+        const auto *data = dynamic_cast<BlockRenderData *>(block.userData());
         if (!data || !block.layout()) {
             continue;
         }
-        for (const MathSpan &span : data->spans) {
+        for (const ImageSpan &span : data->images) {
+            const QTextLine line = block.layout()->lineForTextPosition(span.start);
+            if (!line.isValid()) {
+                continue;
+            }
+            // Scaled once per size and screen scale, smoothly, then cached.
+            const QSize pixels = (span.size * dpr).toSize();
+            const QString key = span.url.toString() + u'|' + QString::number(pixels.width()) + u'x' + QString::number(pixels.height());
+            QPixmap pixmap = m_scaledImages.value(key);
+            if (pixmap.isNull()) {
+                if (m_scaledImages.size() > 200) {
+                    m_scaledImages.clear();
+                }
+                pixmap = QPixmap::fromImage(m_imageCache->image(span.url).scaled(pixels, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+                pixmap.setDevicePixelRatio(dpr);
+                m_scaledImages.insert(key, pixmap);
+            }
+            // Small images on the text baseline; tall ones fill their line and its spacing.
+            const qreal x = rect.left() + line.cursorToX(span.start);
+            const qreal y = span.tall ? rect.top() + line.y() : rect.top() + line.y() + line.ascent() - span.size.height();
+            painter.drawPixmap(QPointF(x, y), pixmap);
+        }
+        for (const MathSpan &span : data->math) {
             const qreal pixelSize = m_highlighter->mathPixelSize(span.display);
             const auto metrics = renderer.measure(span.latex, span.display, pixelSize);
             const QImage image = renderer.render(span.latex, span.display, pixelSize, color, dpr);
@@ -42,8 +66,9 @@ void MarkdownEditor::paintMath(QPainter &painter) const
             const qreal height = metrics.ascent + metrics.descent;
             QPointF topLeft;
             if (span.display) {
-                // Centered on its own line.
-                topLeft = QPointF(rect.left() + (rect.width() - metrics.width) / 2, rect.top() + line.y() + (line.height() - height) / 2);
+                // Centered in its line plus the line spacing below it.
+                const qreal space = line.height() * MarkdownHighlighter::LineHeightPercent / 100.0;
+                topLeft = QPointF(rect.left() + (rect.width() - metrics.width) / 2, rect.top() + line.y() + (space - height) / 2);
             } else {
                 // On the text baseline, where the hidden source starts.
                 const qreal baseline = rect.top() + line.y() + line.ascent();

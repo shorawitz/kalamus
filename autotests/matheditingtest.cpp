@@ -48,7 +48,7 @@ private Q_SLOTS:
         const qreal gap = line.cursorToX(text.indexOf(u" B"_s)) - line.cursorToX(text.indexOf(u"x]"_s) + 1);
         QVERIFY2(gap < 1.0, qPrintable(QString::number(gap)));
         // The formula's hidden source reserves about one formula width ("a" in math italic).
-        QVERIFY(dynamic_cast<MathBlockData *>(block.userData()));
+        QVERIFY(dynamic_cast<BlockRenderData *>(block.userData()));
         const qreal reserved = line.cursorToX(text.indexOf(u" C"_s)) - line.cursorToX(text.indexOf(u"$a$"_s));
         QVERIFY(reserved > 3 && reserved < 30);
     }
@@ -62,12 +62,12 @@ private Q_SLOTS:
         editor.loadMarkdown(u"Intro\n\n$$\n\\int_0^1 x^2 \\, dx = \\frac{1}{3}\n$$\n\nAfter\n"_s);
         moveTo(editor, u"After"_s);
 
-        const auto *data = dynamic_cast<MathBlockData *>(editor.document()->findBlockByNumber(2).userData());
+        const auto *data = dynamic_cast<BlockRenderData *>(editor.document()->findBlockByNumber(2).userData());
         QVERIFY(data);
-        QCOMPARE(data->spans.size(), 1);
-        QVERIFY(data->spans.first().display);
+        QCOMPARE(data->math.size(), 1);
+        QVERIFY(data->math.first().display);
 
-        const auto metrics = MathRenderer::instance().measure(data->spans.first().latex, true, 20);
+        const auto metrics = MathRenderer::instance().measure(data->math.first().latex, true, 20);
         const qreal formula = metrics.ascent + metrics.descent;
         const qreal text = blockHeight(editor, 0);
         qInfo() << "formula" << formula << "opening" << blockHeight(editor, 2) << "inner" << blockHeight(editor, 3) << "closing"
@@ -95,10 +95,10 @@ private Q_SLOTS:
         MarkdownEditor editor;
         editor.loadMarkdown(u"Text $a^2$ and $$\\sum_i i$$ and $5 and `$x$`.\n\nOther"_s);
         moveTo(editor, u"Other"_s);
-        const auto *data = dynamic_cast<MathBlockData *>(editor.document()->firstBlock().userData());
+        const auto *data = dynamic_cast<BlockRenderData *>(editor.document()->firstBlock().userData());
         QVERIFY(data);
         QStringList latex;
-        for (const auto &span : data->spans) {
+        for (const auto &span : data->math) {
             latex.append(span.latex);
         }
         QCOMPARE(latex, (QStringList{u"\\displaystyle \\sum_i i"_s, u"a^2"_s}));

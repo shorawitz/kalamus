@@ -71,6 +71,9 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     m_tableLayout->setFont(font);
     m_highlighter = new MarkdownHighlighter(document());
     m_highlighter->setTableLayout(m_tableLayout.get());
+    m_imageCache = new ImageCache(this);
+    m_highlighter->setImageCache(m_imageCache);
+    connect(m_imageCache, &ImageCache::imageReady, this, &MarkdownEditor::restyleImageBlocks);
 
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] {
         m_highlighter->setActiveBlock(textCursor().block());
@@ -333,6 +336,43 @@ void MarkdownEditor::changeEvent(QEvent *event)
     }
 }
 
+void MarkdownEditor::setBaseDirectory(const QString &directory)
+{
+    if (directory == m_imageCache->baseDirectory()) {
+        return;
+    }
+    m_imageCache->setBaseDirectory(directory);
+    m_imageCache->clear();
+    m_scaledImages.clear();
+    m_highlighter->rehighlight();
+}
+
+QString MarkdownEditor::baseDirectory() const
+{
+    return m_imageCache->baseDirectory();
+}
+
+void MarkdownEditor::restyleImageBlocks()
+{
+    if (m_imageRestylePending) {
+        return;
+    }
+    // Several images often arrive together; re-style once.
+    m_imageRestylePending = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_imageRestylePending = false;
+            for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
+                if (block.text().contains(u"!["_s)) {
+                    m_highlighter->rehighlightBlock(block);
+                }
+            }
+            viewport()->update();
+        },
+        Qt::QueuedConnection);
+}
+
 void MarkdownEditor::setLimitLineWidth(bool limit)
 {
     if (limit != m_limitLineWidth) {
@@ -381,11 +421,12 @@ void MarkdownEditor::relayoutTables()
         [this] {
             m_relayoutPending = false;
             const qreal available = viewport()->width() - 2 * document()->documentMargin();
-            if (!m_highlighter->setTableWidth(available)) {
+            if (!m_highlighter->setContentWidth(available)) {
                 return;
             }
             for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
-                if (MarkdownHighlighter::isTableState(block.userState())) {
+                const auto *data = dynamic_cast<BlockRenderData *>(block.userData());
+                if (MarkdownHighlighter::isTableState(block.userState()) || (data && !data->images.isEmpty())) {
                     m_highlighter->rehighlightBlock(block);
                 }
             }

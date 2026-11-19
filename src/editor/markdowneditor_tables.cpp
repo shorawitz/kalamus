@@ -313,7 +313,7 @@ MarkdownEditor::TableGrid MarkdownEditor::layoutTable(const QTextBlock &first) c
         return {};
     }
     // Same engine and width as the highlighter, so the rows match the source lines.
-    const auto sizes = m_tableLayout->compute(*table, m_highlighter->tableWidth());
+    const auto sizes = m_tableLayout->compute(*table, m_highlighter->contentWidth());
     qreal x = 0;
     for (int c = 0; c < table->columnCount(); ++c) {
         grid.align.append(table->alignment(c));
@@ -472,7 +472,7 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
     QTextEdit::paintEvent(event);
     QPainter painter(viewport());
     painter.setClipRegion(event->region());
-    paintMath(painter);
+    paintInlineObjects(painter);
     const auto grids = visibleTables();
     for (const TableGrid &grid : grids) {
         paintTable(painter, grid);
