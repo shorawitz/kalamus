@@ -7,7 +7,10 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QTemporaryDir>
+#include <QPrinter>
 #include <QTest>
+#include <QTextBlock>
+#include <QTextDocument>
 
 using namespace Qt::StringLiterals;
 
@@ -95,6 +98,32 @@ private Q_SLOTS:
         if (const QString keep = qEnvironmentVariable("KALAMUS_KEEP_EXPORTS"); !keep.isEmpty()) {
             QFile::copy(out, keep + u"/images.pdf"_s);
         }
+    }
+
+    void pdfFitsImagesInTableColumns()
+    {
+        QTemporaryDir dir;
+        QImage image(3000, 500, QImage::Format_RGB32);
+        image.fill(Qt::blue);
+        QVERIFY(image.save(dir.filePath(u"wide.png"_s)));
+        QPrinter printer(QPrinter::HighResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        QTextDocument doc;
+        Exporter::buildPrintDocument(u"| Name | Notes | Picture |\n|---|---|---|\n| a | b | ![](wide.png) |\n\n![](wide.png)\n"_s, dir.path(), printer, doc);
+
+        QList<qreal> widths; // of the images, in document order
+        for (QTextBlock block = doc.begin(); block.isValid(); block = block.next()) {
+            for (auto it = block.begin(); !it.atEnd(); ++it) {
+                if (const QTextFormat f = it.fragment().charFormat(); f.isImageFormat()) {
+                    widths.append(f.toImageFormat().width());
+                }
+            }
+        }
+        QCOMPARE(widths.size(), 2);
+        // In a 3-column table the image gets at most a third of the width it gets on its own,
+        // so the table stays on the page (Qt cuts off what sticks out).
+        QVERIFY2(widths.at(0) <= widths.at(1) / 3, qPrintable(u"%1 vs %2"_s.arg(widths.at(0)).arg(widths.at(1))));
+        QVERIFY(widths.at(0) > 50);
     }
 
     void pdfIsWritten()

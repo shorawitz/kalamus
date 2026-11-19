@@ -189,6 +189,29 @@ QString embedImages(const QString &html, const QString &baseDir, const QPrinter 
     const qreal dpi = screen ? screen->logicalDotsPerInchX() : 96.0;
     const qreal maxWidth = (printer.pageLayout().fullRect(QPageLayout::Inch).width() - 2 * 2.0 / 2.54) * dpi;
 
+    // Inside a table an image gets its column's share of the page; at full width it would
+    // push the table past the page edge, where Qt cuts it off.
+    struct Table {
+        qsizetype start;
+        qsizetype end;
+        qreal maxImageWidth;
+    };
+    QList<Table> tables;
+    static const QRegularExpression table(uR"re(<table>[\s\S]*?</table>)re"_s);
+    static const QRegularExpression firstRow(uR"re(<tr>([\s\S]*?)</tr>)re"_s);
+    static const QRegularExpression cell(uR"re(<t[hd][\s>])re"_s);
+    for (auto it = table.globalMatch(html); it.hasNext();) {
+        const auto m = it.next();
+        int columns = 0;
+        const QString row = firstRow.match(m.captured(0)).captured(1);
+        for (auto c = cell.globalMatch(row); c.hasNext(); c.next()) {
+            ++columns;
+        }
+        columns = qMax(1, columns);
+        constexpr qreal cellPadding = 16; // padding and borders, per column
+        tables.append({m.capturedStart(0), m.capturedEnd(0), qMax<qreal>(32, maxWidth / columns - cellPadding)});
+    }
+
     static const QRegularExpression img(uR"re(<img src="([^"]+)"([^>]*)>)re"_s);
     static const QRegularExpression alt(uR"re(alt="([^"]*)")re"_s);
     QString out;
@@ -215,7 +238,13 @@ QString embedImages(const QString &html, const QString &baseDir, const QPrinter 
         }
         const QUrl url(u"kalamus-image:%1"_s.arg(index++));
         doc.addResource(QTextDocument::ImageResource, url, image);
-        const qreal width = qMin<qreal>(image.width(), maxWidth);
+        qreal limit = maxWidth;
+        for (const Table &t : std::as_const(tables)) {
+            if (m.capturedStart(0) >= t.start && m.capturedStart(0) < t.end) {
+                limit = t.maxImageWidth;
+            }
+        }
+        const qreal width = qMin<qreal>(image.width(), limit);
         out += u"<img src=\""_s + url.toString() + u"\" width=\""_s + QString::number(qFloor(width)) + u"\">"_s;
     }
     out += QStringView(html).mid(last);
@@ -404,15 +433,8 @@ bool Exporter::exportHtml(const QString &markdown, const QString &title, const Q
     return true;
 }
 
-bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const QString &outputPath, QString *error)
+void Exporter::buildPrintDocument(const QString &markdown, const QString &baseDir, const QPrinter &printer, QTextDocument &doc)
 {
-    QPrinter printer(QPrinter::HighResolution);
-    printer.setOutputFormat(QPrinter::PdfFormat);
-    printer.setOutputFileName(outputPath);
-    // QTextDocument::print() adds its own 2 cm margin; printer margins would double it.
-    printer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout::Millimeter);
-
-    QTextDocument doc;
     doc.setBaseUrl(QUrl::fromLocalFile(baseDir + u'/'));
     doc.setDefaultStyleSheet(kPrintCss);
     // Formulas become images, rendered at 4x for crisp print.
@@ -433,6 +455,18 @@ bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const 
         return block ? u"<p align=\"center\">"_s + img + u"</p>"_s : img;
     });
     doc.setHtml(embedImages(html, baseDir, printer, doc));
+}
+
+bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const QString &outputPath, QString *error)
+{
+    QPrinter printer(QPrinter::HighResolution);
+    printer.setOutputFormat(QPrinter::PdfFormat);
+    printer.setOutputFileName(outputPath);
+    // QTextDocument::print() adds its own 2 cm margin; printer margins would double it.
+    printer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout::Millimeter);
+
+    QTextDocument doc;
+    buildPrintDocument(markdown, baseDir, printer, doc);
     doc.print(&printer);
 
     if (!QFile::exists(outputPath)) {
