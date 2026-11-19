@@ -6,6 +6,7 @@
 #include "editor/markdowneditor.h"
 #include "exporter.h"
 #include "filetree.h"
+#include "findbar.h"
 #include "outlinepanel.h"
 
 #include <QAction>
@@ -18,6 +19,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QVBoxLayout>
 
 #include <KActionCollection>
 #include <KConfigGroup>
@@ -45,11 +47,19 @@ MainWindow::MainWindow(QWidget *parent)
     , m_editor(new MarkdownEditor(this))
     , m_tree(new FileTree(this))
     , m_treeDock(new QDockWidget(i18n("Files"), this))
+    , m_findBar(new FindBar(m_editor))
     , m_outline(new OutlinePanel(this))
     , m_outlineDock(new QDockWidget(i18n("Outline"), this))
     , m_outlineTimer(new QTimer(this))
 {
-    setCentralWidget(m_editor);
+    // The page, with the find bar under it.
+    auto *central = new QWidget(this);
+    auto *column = new QVBoxLayout(central);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(0);
+    column->addWidget(m_editor, 1);
+    column->addWidget(m_findBar);
+    setCentralWidget(central);
 
     m_treeDock->setObjectName(u"filesDock"_s);
     m_treeDock->setWidget(m_tree);
@@ -106,6 +116,10 @@ void MainWindow::setupActions()
     KStandardAction::save(this, &MainWindow::save, ac);
     KStandardAction::saveAs(this, &MainWindow::saveAs, ac);
     KStandardAction::quit(this, &QWidget::close, ac);
+    KStandardAction::find(m_findBar, &FindBar::openFind, ac);
+    KStandardAction::findNext(m_findBar, &FindBar::findNext, ac);
+    KStandardAction::findPrev(m_findBar, &FindBar::findPrevious, ac);
+    KStandardAction::replace(m_findBar, &FindBar::openReplace, ac);
 
     QAction *undo = KStandardAction::undo(m_editor, &QTextEdit::undo, ac);
     QAction *redo = KStandardAction::redo(m_editor, &QTextEdit::redo, ac);

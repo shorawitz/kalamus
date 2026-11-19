@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 David Christensen
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "findbar.h"
 #include "mainwindow.h"
 
 #include <QApplication>
@@ -80,6 +81,15 @@ int main(int argc, char **argv)
                 if (auto *editor = window->findChild<QTextEdit *>()) {
                     const QTextBlock block = editor->document()->findBlockByNumber(line);
                     editor->verticalScrollBar()->setValue(int(editor->document()->documentLayout()->blockBoundingRect(block).top()));
+                }
+            });
+        }
+        // KALAMUS_GRAB_REPLACE=text opens the find/replace bar searching for it.
+        if (const QString find = qEnvironmentVariable("KALAMUS_GRAB_REPLACE"); !find.isEmpty()) {
+            QTimer::singleShot(600, window, [window, find] {
+                if (auto *bar = window->findChild<FindBar *>()) {
+                    bar->openReplace();
+                    bar->setFindText(find);
                 }
             });
         }

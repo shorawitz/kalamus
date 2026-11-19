@@ -54,6 +54,8 @@ only its LaTeX math renderer is compiled in.
 | F9 | Show/hide the Files panel |
 | Shift+F9 | Show/hide the Outline panel (click a heading to jump to it) |
 | Shift+F7 | Spell checking on/off (right-click a word for suggestions) |
+| Ctrl+F / Ctrl+R | Find / find and replace (bar under the page; Esc closes) |
+| F3 / Shift+F3 | Next / previous match |
 | Ctrl+E | Export to PDF |
 | Ctrl+T | Insert a table |
 | Ctrl+Shift+I | Insert an image (or paste one, or drop image files) |
@@ -79,7 +81,9 @@ only its LaTeX math renderer is compiled in.
   suggestions, Add to Dictionary and Ignore on right-click; Tools → Spelling Language
 - [x] Outline panel: headings as a tree next to Files; click to jump, the
   current section is highlighted
-- [ ] Find/replace, recent files
+- [x] Find and replace: live search, match count, match case / whole words /
+  regex (with \1 in replacements), Replace All as one undo step
+- [ ] Recent files
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/
       when they live outside the document's folder); Insert Image
 - [ ] Settings: font, line width, theme

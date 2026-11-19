@@ -7,6 +7,7 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Test)
 ecm_add_tests(
     codehighlightingtest.cpp
     exportertest.cpp
+    findreplacetest.cpp
     imageeditingtest.cpp
     markdowntabletest.cpp
     mathrenderertest.cpp

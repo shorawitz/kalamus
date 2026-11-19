@@ -6,6 +6,7 @@
 #include <KXmlGuiWindow>
 
 class FileTree;
+class FindBar;
 class OutlinePanel;
 class QTimer;
 class MarkdownEditor;
@@ -45,6 +46,7 @@ private:
     MarkdownEditor *m_editor;
     FileTree *m_tree;
     QDockWidget *m_treeDock;
+    FindBar *m_findBar;
     OutlinePanel *m_outline;
     QDockWidget *m_outlineDock;
     QTimer *m_outlineTimer;
