@@ -43,6 +43,7 @@ public:
     QList<ImageSpan> images;
     QString codeLanguage; ///< set on a fenced code block's lines ("" outside; " " if unnamed)
     KSyntaxHighlighting::State codeState; ///< syntax state at the end of this line
+    size_t paragraphKey = 0; ///< what the line's paragraph neighbours depend on (see flush())
 };
 
 /**
@@ -115,7 +116,12 @@ protected:
 private:
     using FormatList = QList<QTextCharFormat>;
 
-    void highlightInline(const QString &text, int from, FormatList &formats, bool active);
+    /// Spell checking only looks at @p checkFrom .. @p checkTo (-1: to the end).
+    void highlightInline(const QString &text, int from, FormatList &formats, bool active, int checkFrom = 0, int checkTo = -1);
+    /// A paragraph line: inline styles see the whole paragraph, so they can cross lines.
+    void highlightParagraphLine(const QString &text, int offset, FormatList &formats, bool active);
+    void queueParagraphRestyle(const QTextBlock &block);
+    void restyleEditedParagraphs();
     /// An invisible character that makes its line tall (and wide) enough for a formula.
     /// With @p fitTotalHeight the line is sized by ascent + descent only (for centered or
     /// bottom-aligned objects); otherwise ascent and descent must each fit.
@@ -142,6 +148,10 @@ private:
     ImageCache *m_imageCache = nullptr;
     SpellChecker *m_spellChecker = nullptr;
     qreal m_contentWidth = 0;
+    QList<QTextCursor> m_pendingParagraphs; // around recent edits, re-styled once queued work runs
+    bool m_paragraphRestyleQueued = false;
+    bool m_restylingParagraphs = false;
+    int m_blockCount = 1;
     QFont m_codeFont;
 
     QTextCharFormat m_hidden;

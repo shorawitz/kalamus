@@ -43,7 +43,9 @@ private:
 
     static const BlockRenderData *dataOf(MarkdownEditor &editor, int block)
     {
-        return dynamic_cast<BlockRenderData *>(editor.document()->findBlockByNumber(block).userData());
+        // Every line has render data; only one with something drawn counts here.
+        const auto *data = dynamic_cast<BlockRenderData *>(editor.document()->findBlockByNumber(block).userData());
+        return data && (!data->images.isEmpty() || !data->math.isEmpty()) ? data : nullptr;
     }
 
     QTemporaryDir m_dir;

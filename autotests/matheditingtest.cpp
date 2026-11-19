@@ -18,6 +18,12 @@ class MathEditingTest : public QObject
     Q_OBJECT
 
 private:
+    static bool hasRenderedMath(MarkdownEditor &editor, int block)
+    {
+        const auto *data = dynamic_cast<BlockRenderData *>(editor.document()->findBlockByNumber(block).userData());
+        return data && !data->math.isEmpty();
+    }
+
     static qreal blockHeight(MarkdownEditor &editor, int number)
     {
         const QTextBlock block = editor.document()->findBlockByNumber(number);
@@ -84,10 +90,10 @@ private Q_SLOTS:
         QCoreApplication::processEvents();
         editor.loadMarkdown(u"$$\nx^2\n$$\n\nAfter"_s);
         moveTo(editor, u"x^2"_s);
-        QVERIFY(!editor.document()->findBlockByNumber(0).userData()); // no rendered span
+        QVERIFY(!hasRenderedMath(editor, 0)); // no rendered span
         QVERIFY(blockHeight(editor, 1) > 8); // source line visible again
         moveTo(editor, u"After"_s);
-        QVERIFY(editor.document()->findBlockByNumber(0).userData());
+        QVERIFY(hasRenderedMath(editor, 0));
     }
 
     void inlineSpans()

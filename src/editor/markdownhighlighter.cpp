@@ -13,6 +13,7 @@
 #include <QScreen>
 
 #include <cmath>
+#include <utility>
 #include <QPalette>
 #include <QRegularExpression>
 #include <QTextDocument>
@@ -30,19 +31,148 @@ const QRegularExpression kQuote(uR"(^ {0,3}(?:>[ \t]?)+)"_s);
 const QRegularExpression kList(uR"(^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
 const QRegularExpression kRefDefinition(uR"(^ {0,3}\[[^\]]+\]:[ \t])"_s);
 
-// Inline patterns
-const QRegularExpression kCodeSpan(uR"((`+)(.+?)(?<!`)\1(?!`))"_s);
+// Inline patterns. They run on a whole paragraph on a whole paragraph, so a span may cross a line break ([\s\S]).
+const QRegularExpression kCodeSpan(uR"((`+)([\s\S]+?)(?<!`)\1(?!`))"_s);
 const QRegularExpression kInlineDisplayMath(uR"((?<![\\$])\$\$(?=\S)([^$\n]+?)(?<=\S)\$\$)"_s);
 const QRegularExpression kInlineMath(uR"((?<![\\$])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$]))"_s);
 // Destinations may be <in angle brackets> (then they can contain spaces).
-const QRegularExpression kImage(uR"(!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
+const QRegularExpression kImage(uR"(!\[([^\]\n]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 // [![alt](image)](link), as in README badges.
-const QRegularExpression kLinkedImage(uR"(\[!\[([^\]]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
+const QRegularExpression kLinkedImage(uR"(\[!\[([^\]\n]*)\]\((<[^>\n]*>|[^)\s]*)(?:[ \t]+"[^"]*")?\)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 const QRegularExpression kLink(uR"((?<!!)\[([^\]]+)\]\(([^)\s]*)(?:[ \t]+"[^"]*")?\))"_s);
 const QRegularExpression kAutoLink(uR"(<(https?://[^>\s]+)>|\bhttps?://[^\s<>()]+[^\s<>().,;:!?'")\]])"_s);
-const QRegularExpression kBold(uR"((\*\*|__)(?=\S)(.+?)(?<=\S)\1)"_s);
-const QRegularExpression kItalic(uR"((?<![*\w])(\*|_)(?=[^\s*_])(.+?)(?<=[^\s*_])\1(?![*\w]))"_s);
-const QRegularExpression kStrike(uR"(~~(?=\S)(.+?)(?<=\S)~~)"_s);
+// Bold and strike stop at the next same marker, so an unclosed ** cannot swallow the next pair.
+const QRegularExpression kBold(uR"((\*\*|__)(?=\S)((?:(?!\1)[\s\S])+?)(?<=\S)\1)"_s);
+const QRegularExpression kItalic(uR"((?<![*\w])(\*|_)(?=[^\s*_])([\s\S]+?)(?<=[^\s*_])\1(?![*\w]))"_s);
+const QRegularExpression kStrike(uR"(~~(?=\S)((?:(?!~~)[\s\S])+?)(?<=\S)~~)"_s);
+
+// Paragraphs: emphasis and code spans may run across the lines of one paragraph.
+// How far up and down a line looks for the rest of its paragraph. Spans longer than this are
+// rare, and the limit keeps typing fast in a very long paragraph.
+constexpr int kParagraphReach = 20;
+
+struct LineInfo {
+    enum Kind {
+        Blank,
+        Breaker, ///< a line that is never part of a paragraph (heading, fence, rule, table ...)
+        ItemStart, ///< a list item: starts a paragraph that later lines may continue
+        Text, ///< plain text: continues the paragraph above, if any
+    };
+    Kind kind = Text;
+    int quoteDepth = 0;
+    int contentStart = 0; ///< after any > and list marker
+};
+
+/// @p styled: the block's state is up to date (the blocks above the one being styled).
+LineInfo classify(const QTextBlock &block, bool styled)
+{
+    const QString text = block.text();
+    LineInfo info;
+    if (text.trimmed().isEmpty()) {
+        info.kind = LineInfo::Blank;
+        return info;
+    }
+    if ((styled && block.userState() > 0) || (block.blockNumber() == 0 && text == u"---"_s) || kFenceOpen.match(text).hasMatch()
+        || text.trimmed().startsWith(u"$$"_s) || kHeading.match(text).hasMatch() || kRule.match(text).hasMatch()
+        || kRefDefinition.match(text).hasMatch()
+        || (text.contains(u'|') && (MarkdownTable::isDelimiterRow(text) || MarkdownTable::isDelimiterRow(block.next().text())))) {
+        info.kind = LineInfo::Breaker;
+        return info;
+    }
+    if (const auto m = kQuote.match(text); m.hasMatch()) {
+        info.quoteDepth = int(m.captured(0).count(u'>'));
+        info.contentStart = m.capturedEnd(0);
+        if (info.contentStart == text.size()) {
+            info.kind = LineInfo::Blank; // ">" alone separates paragraphs in a quote
+            return info;
+        }
+    }
+    if (const auto m = kList.match(text, info.contentStart, QRegularExpression::NormalMatch, QRegularExpression::AnchorAtOffsetMatchOption);
+        m.hasMatch()) {
+        info.kind = LineInfo::ItemStart;
+        info.contentStart = m.capturedEnd(0);
+    }
+    // A continuation line's indent is not part of the text (it would show inside a code span).
+    while (info.contentStart < text.size() && (text.at(info.contentStart) == u' ' || text.at(info.contentStart) == u'\t')) {
+        ++info.contentStart;
+    }
+    return info;
+}
+
+/// Whether @p lower continues the paragraph of the line above it, @p upper.
+bool continues(const LineInfo &upper, const LineInfo &lower)
+{
+    // A line without > after a quote still belongs to the quote's paragraph ("lazy" continuation).
+    return (upper.kind == LineInfo::Text || upper.kind == LineInfo::ItemStart) && lower.kind == LineInfo::Text
+        && (lower.quoteDepth == upper.quoteDepth || lower.quoteDepth == 0);
+}
+
+/// What other lines of a paragraph can see of this line: its kind and its emphasis and code
+/// markers with the characters beside them. Typing ordinary words leaves it unchanged.
+size_t paragraphKey(const QString &text, const LineInfo &info)
+{
+    auto kindOf = [&](qsizetype i) {
+        if (i < 0 || i >= text.size() || text.at(i).isSpace()) {
+            return u' ';
+        }
+        return text.at(i).isLetterOrNumber() || text.at(i) == u'_' ? u'w' : u'.';
+    };
+    QString key = QString::number(int(info.kind)) + QString::number(info.quoteDepth) + QString::number(text.count(u"://"_s));
+    for (qsizetype i = info.contentStart; i < text.size(); ++i) {
+        if (QStringView(u"*_~`$[]()!<>\\").contains(text.at(i))) {
+            key += kindOf(i - 1);
+            key += text.at(i);
+            key += kindOf(i + 1);
+        }
+    }
+    return qHash(key);
+}
+
+/// The first and last line of the paragraph @p block is in (both @p block when it stands alone).
+/// @p contentStarts, if given, gets where each line's text starts (after > and list markers).
+void paragraphExtent(const QTextBlock &block, QTextBlock *first, QTextBlock *last, QList<int> *contentStarts = nullptr)
+{
+    *first = *last = block;
+    const LineInfo self = classify(block, false);
+    if (contentStarts) {
+        *contentStarts = {self.contentStart};
+    }
+    if (self.kind == LineInfo::Blank || self.kind == LineInfo::Breaker) {
+        return;
+    }
+    LineInfo below = self;
+    for (int n = 0; n < kParagraphReach; ++n) {
+        const QTextBlock above = first->previous();
+        if (!above.isValid()) {
+            break;
+        }
+        const LineInfo info = classify(above, true);
+        if (!continues(info, below)) {
+            break;
+        }
+        if (contentStarts) {
+            contentStarts->prepend(info.contentStart);
+        }
+        *first = above;
+        below = info;
+    }
+    LineInfo above = self;
+    for (int n = 0; n < kParagraphReach; ++n) {
+        const QTextBlock next = last->next();
+        if (!next.isValid()) {
+            break;
+        }
+        const LineInfo info = classify(next, false);
+        if (!continues(above, info)) {
+            break;
+        }
+        if (contentStarts) {
+            contentStarts->append(info.contentStart);
+        }
+        *last = next;
+        above = info;
+    }
+}
 
 } // namespace
 
@@ -50,6 +180,72 @@ MarkdownHighlighter::MarkdownHighlighter(QTextDocument *document)
     : QSyntaxHighlighter(document)
 {
     refreshStyles();
+    m_blockCount = document->blockCount();
+
+    // An edit can change how the other lines of its paragraph look: "**" typed on one line
+    // closes a bold opened on another, or a new blank line splits a paragraph in two.
+    // QSyntaxHighlighter only re-styles the edited lines, so re-style their paragraphs too.
+    // Changes inside a line are caught in flush(); here, line breaks added or removed.
+    connect(document, &QTextDocument::contentsChange, this, [this](int position, int, int added) {
+        if (this->document()->blockCount() == m_blockCount) {
+            return;
+        }
+        m_blockCount = this->document()->blockCount();
+        const QTextBlock first = this->document()->findBlock(position);
+        QTextBlock last = this->document()->findBlock(position + added);
+        if (!last.isValid()) {
+            last = this->document()->lastBlock();
+        }
+        if (first.isValid()) {
+            queueParagraphRestyle(first.previous().isValid() ? first.previous() : first);
+            queueParagraphRestyle(last.next().isValid() ? last.next() : last);
+        }
+    });
+}
+
+void MarkdownHighlighter::queueParagraphRestyle(const QTextBlock &block)
+{
+    m_pendingParagraphs.append(QTextCursor(block));
+    if (!m_paragraphRestyleQueued) {
+        m_paragraphRestyleQueued = true;
+        QMetaObject::invokeMethod(this, &MarkdownHighlighter::restyleEditedParagraphs, Qt::QueuedConnection);
+    }
+}
+
+void MarkdownHighlighter::restyleEditedParagraphs()
+{
+    m_paragraphRestyleQueued = false;
+    const auto pending = std::exchange(m_pendingParagraphs, {});
+    if (pending.isEmpty()) {
+        return;
+    }
+    // From the line before the edit to the line after it, widened to whole paragraphs.
+    int from = -1;
+    int to = -1;
+    for (const QTextCursor &cursor : pending) {
+        if (cursor.isNull()) {
+            continue;
+        }
+        QTextBlock first;
+        QTextBlock last;
+        paragraphExtent(cursor.block(), &first, &last);
+        from = from < 0 ? first.blockNumber() : qMin(from, first.blockNumber());
+        to = qMax(to, last.blockNumber());
+    }
+    if (from < 0) {
+        return;
+    }
+    bool changed = false;
+    m_restylingParagraphs = true;
+    for (QTextBlock b = document()->findBlockByNumber(from); b.isValid() && b.blockNumber() <= to; b = b.next()) {
+        const auto before = b.layout()->formats();
+        rehighlightBlock(b);
+        changed = changed || b.layout()->formats() != before;
+    }
+    m_restylingParagraphs = false;
+    if (changed) {
+        Q_EMIT restyled();
+    }
 }
 
 void MarkdownHighlighter::refreshStyles()
@@ -449,11 +645,66 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         offset = m.capturedEnd(0);
     }
 
-    highlightInline(text, offset, formats, active);
+    highlightParagraphLine(text, offset, formats, active);
     flush(formats);
 }
 
-void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active)
+void MarkdownHighlighter::highlightParagraphLine(const QString &text, int offset, FormatList &formats, bool active)
+{
+    QTextBlock first;
+    QTextBlock last;
+    QList<int> contentStarts;
+    paragraphExtent(currentBlock(), &first, &last, &contentStarts);
+    if (first == last) {
+        highlightInline(text, offset, formats, active);
+        return;
+    }
+
+    // Style the paragraph's text (markers like > and - left out) as one, then keep this line's part.
+    QString paragraph;
+    int lineStart = 0;
+    int index = 0;
+    for (QTextBlock b = first;; b = b.next(), ++index) {
+        if (b != first) {
+            paragraph += u'\n';
+        }
+        if (b == currentBlock()) {
+            offset = qMax(offset, contentStarts.at(index));
+            lineStart = int(paragraph.size());
+            paragraph += QStringView(text).mid(offset);
+        } else {
+            paragraph += QStringView(b.text()).mid(contentStarts.at(index));
+        }
+        if (b == last) {
+            break;
+        }
+    }
+    const int length = int(text.size()) - offset;
+    FormatList paragraphFormats(paragraph.size());
+    for (int i = 0; i < length; ++i) {
+        paragraphFormats[lineStart + i] = formats[offset + i];
+    }
+    highlightInline(paragraph, 0, paragraphFormats, active, lineStart, lineStart + length);
+    for (int i = 0; i < length; ++i) {
+        formats[offset + i] = paragraphFormats[lineStart + i];
+    }
+
+    // Formulas and images never cross a line; keep this line's, at this line's offsets.
+    auto keepOwn = [&](auto &spans) {
+        for (qsizetype i = spans.size() - 1; i >= 0; --i) {
+            auto &span = spans[i];
+            if (span.start < lineStart || span.start + span.length > lineStart + length) {
+                spans.removeAt(i);
+            } else {
+                span.start += offset - lineStart;
+            }
+        }
+    };
+    keepOwn(m_mathSpans);
+    keepOwn(m_imageSpans);
+}
+
+void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active, int checkFrom, int checkTo)
 {
     QList<bool> taken(text.size(), false);
 
@@ -621,10 +872,19 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
     }
 
     if (m_spellChecker && m_spellChecker->isEnabled()) {
-        const auto words = SpellChecker::wordsToCheck(text, from);
+        // Only this line's words. Code, math and link targets that start on another line of
+        // the paragraph are not visible to wordsToCheck() here, but they are "taken" above.
+        const int lineFrom = qMax(from, checkFrom);
+        const int lineTo = checkTo < 0 ? int(text.size()) : checkTo;
+        const QString line = text.mid(lineFrom, lineTo - lineFrom);
+        const auto words = SpellChecker::wordsToCheck(line, 0);
         for (const auto &word : words) {
-            if (m_spellChecker->isMisspelled(text.mid(word.start, word.length))) {
-                for (int i = word.start; i < word.start + word.length; ++i) {
+            const int start = lineFrom + word.start;
+            if (taken[start]) {
+                continue;
+            }
+            if (m_spellChecker->isMisspelled(line.mid(word.start, word.length))) {
+                for (int i = start; i < start + word.length; ++i) {
                     formats[i].clearProperty(QTextFormat::FontUnderline); // a link's underline would hide the wave
                     formats[i].merge(m_misspelled);
                 }
@@ -763,16 +1023,27 @@ QString MarkdownHighlighter::displayMathSource(const QTextBlock &opening, int *l
 
 void MarkdownHighlighter::flush(const FormatList &formats)
 {
-    if (m_mathSpans.isEmpty() && m_imageSpans.isEmpty() && m_codeLanguage.isEmpty()) {
-        setCurrentBlockUserData(nullptr);
-    } else {
-        auto *data = new BlockRenderData;
-        data->math = m_mathSpans;
-        data->images = m_imageSpans;
-        data->codeLanguage = m_codeLanguage;
-        data->codeState = m_codeState;
-        setCurrentBlockUserData(data);
+    // When this line changes what the other lines of its paragraph see (a ** added, the line
+    // turned into a heading), re-style the paragraph around it once this edit is done.
+    const QString text = currentBlock().text();
+    const size_t key = paragraphKey(text, classify(currentBlock(), false));
+    const auto *old = dynamic_cast<BlockRenderData *>(currentBlockUserData());
+    if (old && old->paragraphKey != key && !m_restylingParagraphs) {
+        // The lines above and below too: a line that stops being part of the paragraph
+        // (say, becomes a heading) leaves its old neighbours to be re-styled without it.
+        const QTextBlock block = currentBlock();
+        queueParagraphRestyle(block.previous().isValid() ? block.previous() : block);
+        queueParagraphRestyle(block);
+        queueParagraphRestyle(block.next().isValid() ? block.next() : block);
     }
+
+    auto *data = new BlockRenderData;
+    data->math = m_mathSpans;
+    data->images = m_imageSpans;
+    data->codeLanguage = m_codeLanguage;
+    data->codeState = m_codeState;
+    data->paragraphKey = key;
+    setCurrentBlockUserData(data);
 
     const int n = formats.size();
     int i = 0;

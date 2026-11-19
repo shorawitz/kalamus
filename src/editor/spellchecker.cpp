@@ -13,7 +13,7 @@ namespace
 {
 // Parts of a line that are not prose. Matched first and skipped.
 const QRegularExpression kNotProse(uR"re(
-    (`+).+?(?<!`)\1(?!`)                    # code span
+    (`+)[\s\S]+?(?<!`)\1(?!`)              # code span (may cross a line)
   | (?<![\\$])\$\$[^$\n]+?\$\$              # $$display math$$
   | (?<![\\$])\$(?=\S)[^$\n]+?(?<=\S)\$     # $inline math$
   | \]\((?:<[^>\n]*>|[^)\s]*)(?:\s+"[^"]*")?\)   # ](link or image target "title")

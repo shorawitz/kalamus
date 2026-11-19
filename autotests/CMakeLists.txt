@@ -13,6 +13,7 @@ ecm_add_tests(
     mathrenderertest.cpp
     matheditingtest.cpp
     outlinetest.cpp
+    paragraphstylingtest.cpp
     spellcheckingtest.cpp
     tableeditingtest.cpp
     LINK_LIBRARIES kalamuscore Qt6::Test
