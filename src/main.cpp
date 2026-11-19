@@ -89,6 +89,16 @@ int main(int argc, char **argv)
                 }
             });
         }
+        // KALAMUS_GRAB_CURSOR_END=1 puts the cursor on the last line (so no line shows its
+        // markers) and keeps the view at the top.
+        if (qEnvironmentVariableIntValue("KALAMUS_GRAB_CURSOR_END") > 0) {
+            QTimer::singleShot(400, window, [window] {
+                if (auto *editor = window->findChild<QTextEdit *>()) {
+                    editor->moveCursor(QTextCursor::End);
+                    editor->verticalScrollBar()->setValue(0);
+                }
+            });
+        }
         // KALAMUS_GRAB_REPLACE=text opens the find/replace bar searching for it.
         if (const QString find = qEnvironmentVariable("KALAMUS_GRAB_REPLACE"); !find.isEmpty()) {
             QTimer::singleShot(600, window, [window, find] {

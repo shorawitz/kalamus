@@ -42,6 +42,7 @@ if(BUILD_TESTING)
 endif()
 
 install(FILES io.github.shorawitz.Kalamus.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES io.github.shorawitz.Kalamus.metainfo.xml DESTINATION ${KDE_INSTALL_METAINFODIR})
 
 include(ECMInstallIcons)
 ecm_install_icons(ICONS icons/sc-apps-io.github.shorawitz.Kalamus.svg DESTINATION ${KDE_INSTALL_ICONDIR})

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 David Christensen -->
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>io.github.shorawitz.Kalamus</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Kalamus</name>
+  <summary>Write Markdown with live formatting</summary>
+  <developer id="io.github.shorawitz">
+    <name>David Christensen</name>
+  </developer>
+  <description>
+    <p>
+      Kalamus is a Markdown editor for KDE Plasma that formats your text as you write.
+      Headings grow, bold turns bold, tables become grids, formulas and images show in
+      place, and the Markdown syntax hides away except on the line you are editing.
+      The file on disk always stays plain Markdown.
+    </p>
+    <ul>
+      <li>Live preview in the editor itself, with no separate preview pane</li>
+      <li>Tables you can edit as grids, LaTeX math, images, and code in color</li>
+      <li>Spell checking, an outline of headings, and find and replace</li>
+      <li>Export to HTML and PDF, or to Word and ODT with pandoc</li>
+      <li>Built with Qt 6 and KDE Frameworks 6, following your Plasma colors and fonts</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.shorawitz.Kalamus.desktop</launchable>
+  <url type="homepage">https://github.com/shorawitz/kalamus</url>
+  <url type="bugtracker">https://github.com/shorawitz/kalamus/issues</url>
+  <url type="vcs-browser">https://github.com/shorawitz/kalamus</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A document with headings, a task list, a table, a formula and code</caption>
+      <image>https://raw.githubusercontent.com/shorawitz/kalamus/main/docs/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+  </categories>
+  <provides>
+    <binary>kalamus</binary>
+    <mediatype>text/markdown</mediatype>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-19">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

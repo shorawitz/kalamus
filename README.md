@@ -5,6 +5,8 @@ Typora, but free software (GPL-3.0-or-later) and built natively with Qt 6 and KD
 
 Named after the *calamus*, the reed pen scribes wrote with.
 
+![Kalamus editing a document with headings, a task list, a table, a formula and Python code](docs/screenshot.png)
+
 ## Principles
 
 - **Your file is the truth.** The editor shows the Markdown source styled like the
@@ -66,7 +68,8 @@ only its LaTeX math renderer is compiled in.
 ## Roadmap
 
 ### v1
-- [x] Live-formatted editing (headings, emphasis, code, links, lists, tasks, quotes)
+- [x] Live-formatted editing (headings, emphasis, code, links, lists, tasks, quotes);
+      `#` and underlined (`===` / `---`) headings; emphasis and code may span lines
 - [x] Files panel (folder tree, Markdown files only)
 - [x] Export: HTML, PDF (built in, code blocks in color); Word, ODT (via pandoc)
 - [x] Tables drawn as a grid when the cursor is outside; aligned source with
