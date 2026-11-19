@@ -180,6 +180,7 @@ private:
     bool m_relayoutPending = false;
     bool m_imageRestylePending = false;
     bool m_layoutCheckPending = false;
+    bool m_forwardingMouse = false; // a margin click on its way to the viewport
     ImageCache *m_imageCache = nullptr;
     SpellChecker m_spellChecker;
     std::function<bool()> m_saveRequester;

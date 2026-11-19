@@ -5,6 +5,9 @@
 #include "markdowneditor.h"
 #include "markdownhighlighter.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QMimeData>
 #include <QTest>
 #include <QTextBlock>
 
@@ -36,6 +39,30 @@ private:
     }
 
 private Q_SLOTS:
+    void pasteYamlIntoYamlBlock()
+    {
+        MarkdownEditor editor;
+        editor.resize(900, 600);
+        editor.show();
+        editor.loadMarkdown(u"Intro\n\n```yaml\n\n```\n\nAfter"_s);
+        QTextCursor cursor(editor.document()->findBlockByNumber(3));
+        editor.setTextCursor(cursor);
+        QMimeData mime;
+        mime.setText(u"# config\nserver:\n  host: example.org   # inline comment\n  ports: [80, 443]\n  tls: true\n"
+                     "list:\n  - name: \"a: b\"\n    value: |\n      multi\n      line\n---\nanchors: &base\n  x: 1\nother:\n  <<: *base\n"_s);
+        QGuiApplication::clipboard()->setMimeData(new QMimeData);
+        QGuiApplication::clipboard()->setText(mime.text());
+        editor.paste();
+        settle();
+        QVERIFY(editor.markdown().contains(u"ports: [80, 443]"_s));
+        // Moving the cursor out and back re-styles the block both ways.
+        editor.moveCursor(QTextCursor::End);
+        settle();
+        editor.moveCursor(QTextCursor::Start);
+        settle();
+        QVERIFY(colorAt(editor, 4, 0).isValid()); // "server:" is coloured as YAML
+    }
+
     void languageNames_data()
     {
         QTest::addColumn<QString>("fence");

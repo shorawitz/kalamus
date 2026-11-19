@@ -490,12 +490,18 @@ bool MarkdownEditor::event(QEvent *event)
     case QEvent::MouseMove: {
         auto *mouse = static_cast<QMouseEvent *>(event);
         const QRect area = viewport()->geometry();
+        // An event the viewport ignores bubbles back up here: never send it round again.
+        if (m_forwardingMouse || area.contains(mouse->position().toPoint())) {
+            return QTextEdit::event(event);
+        }
         QPointF pos = mouse->position() - area.topLeft();
         pos.setX(qBound(0.0, pos.x(), qreal(area.width() - 1)));
         pos.setY(qBound(0.0, pos.y(), qreal(area.height() - 1)));
         QMouseEvent forwarded(mouse->type(), pos, viewport()->mapToGlobal(pos), mouse->button(), mouse->buttons(),
                               mouse->modifiers(), mouse->pointingDevice());
+        m_forwardingMouse = true;
         QCoreApplication::sendEvent(viewport(), &forwarded);
+        m_forwardingMouse = false;
         return true;
     }
     default:

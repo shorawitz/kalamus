@@ -7,6 +7,8 @@
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QBuffer>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QDir>
 #include <QTemporaryDir>
 #include <QScrollBar>
@@ -93,6 +95,7 @@ private Q_SLOTS:
             editor.loadMarkdown(u"Intro text\n\n![h](<pics/huge one.png>)\n\nText ![s](pics/small.png) more text after it\n\nAfter"_s);
             moveTo(editor, u"After"_s);
             QTest::qWait(50);
+            QTRY_VERIFY_WITH_TIMEOUT(editor.document()->size().width() <= editor.viewport()->width(), 2000);
             QVERIFY2(editor.document()->size().width() <= editor.viewport()->width(),
                      qPrintable(u"document %1 wider than viewport %2"_s.arg(editor.document()->size().width()).arg(editor.viewport()->width())));
             QVERIFY(!editor.horizontalScrollBar()->isVisible());
@@ -118,6 +121,21 @@ private Q_SLOTS:
                           Qt::NoScrollPhase, false);
         QApplication::sendEvent(&editor, &wheel);
         QVERIFY(editor.verticalScrollBar()->value() > 0);
+
+        // Events the text area ignores bubble back up to the editor: they must not loop.
+        QTest::mouseClick(&editor, Qt::MiddleButton, Qt::NoModifier, QPoint(20, 5));
+        // Middle click in the text (paste the X11/Wayland selection) crashed this way.
+        if (QGuiApplication::clipboard()->supportsSelection()) {
+            QGuiApplication::clipboard()->setText(u"pasted"_s, QClipboard::Selection);
+        }
+        QTest::mouseClick(editor.viewport(), Qt::MiddleButton, Qt::NoModifier, QPoint(40, 5));
+        if (QGuiApplication::clipboard()->supportsSelection()) {
+            QVERIFY(editor.markdown().contains(u"pasted"_s));
+        }
+        QTest::mouseClick(&editor, Qt::RightButton, Qt::NoModifier, QPoint(20, 5));
+        QTest::mouseClick(&editor, Qt::BackButton, Qt::NoModifier, QPoint(20, 5));
+        QTest::mouseMove(&editor, QPoint(30, 50));
+        QTest::mouseDClick(&editor, Qt::LeftButton, Qt::NoModifier, QPoint(20, 5));
 
         QTest::mouseClick(&editor, Qt::LeftButton, Qt::NoModifier, QPoint(20, 5));
         QCOMPARE(editor.textCursor().positionInBlock(), 0);
