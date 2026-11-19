@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "mainwindow.h"
+#include "editor/codehighlighter.h"
 #include "editor/markdowneditor.h"
 #include "exporter.h"
 #include "filetree.h"
@@ -12,6 +13,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QInputDialog>
 #include <QSaveFile>
 #include <QStandardPaths>
 
@@ -128,8 +130,37 @@ void MainWindow::setupActions()
             &QAction::triggered, m_editor, &MarkdownEditor::toggleItalic);
     connect(add(u"format_strikethrough"_s, i18n("&Strikethrough"), u"format-text-strikethrough"_s, QKeySequence(Qt::ALT | Qt::SHIFT | Qt::Key_5)),
             &QAction::triggered, m_editor, &MarkdownEditor::toggleStrikethrough);
+    QAction *codeBlock = add(u"format_code_block"_s, i18n("Code &Block…"), u"code-context"_s, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_K));
+    connect(codeBlock, &QAction::triggered, this, [this] {
+        // Ask for the language (it picks the colours); remember the last choice.
+        KConfigGroup group = KSharedConfig::openConfig()->group(u"Editor"_s);
+        const QString last = group.readEntry("LastCodeLanguage", u"python"_s);
+        QStringList choices = CodeHighlighter::instance().languageChoices();
+        choices.insert(0, u"text"_s);
+        bool ok = false;
+        const QString language = QInputDialog::getItem(this,
+                                                       i18n("Code Block"),
+                                                       i18n("Language (sets the colours; type to search):"),
+                                                       choices,
+                                                       qMax(0, int(choices.indexOf(last))),
+                                                       true,
+                                                       &ok)
+                                     .trimmed();
+        if (!ok) {
+            return;
+        }
+        group.writeEntry("LastCodeLanguage", language);
+        m_editor->insertCodeBlock(language == u"text"_s ? QString() : language);
+    });
     connect(add(u"format_code"_s, i18n("Inline &Code"), u"format-text-code"_s, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_QuoteLeft)),
-            &QAction::triggered, m_editor, &MarkdownEditor::toggleCode);
+            &QAction::triggered, this, [this, codeBlock] {
+                // Several lines of code belong in a code block, not in backticks.
+                if (m_editor->selectionSpansLines()) {
+                    codeBlock->trigger();
+                } else {
+                    m_editor->toggleCode();
+                }
+            });
     connect(add(u"format_link"_s, i18n("&Link"), u"insert-link"_s, QKeySequence(Qt::CTRL | Qt::Key_K)),
             &QAction::triggered, m_editor, &MarkdownEditor::insertLink);
 

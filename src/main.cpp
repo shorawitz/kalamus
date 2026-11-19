@@ -7,6 +7,10 @@
 #include <QCommandLineParser>
 #include <QIcon>
 #include <QPalette>
+#include <QAbstractTextDocumentLayout>
+#include <QScrollBar>
+#include <QTextBlock>
+#include <QTextEdit>
 #include <QTimer>
 
 #include <KAboutData>
@@ -70,6 +74,15 @@ int main(int argc, char **argv)
         // The off-screen platform has no saved geometry; KALAMUS_GRAB_SIZE=WxH overrides.
         const QStringList size = qEnvironmentVariable("KALAMUS_GRAB_SIZE", u"1100x760"_s).split(u'x');
         window->resize(size.value(0).toInt(), size.value(1).toInt());
+        // KALAMUS_GRAB_LINE=n scrolls block n to the top first.
+        if (const int line = qEnvironmentVariableIntValue("KALAMUS_GRAB_LINE"); line > 0) {
+            QTimer::singleShot(500, window, [window, line] {
+                if (auto *editor = window->findChild<QTextEdit *>()) {
+                    const QTextBlock block = editor->document()->findBlockByNumber(line);
+                    editor->verticalScrollBar()->setValue(int(editor->document()->documentLayout()->blockBoundingRect(block).top()));
+                }
+            });
+        }
         QTimer::singleShot(1000, window, [window, target] {
             window->grab().save(target);
             QApplication::quit();

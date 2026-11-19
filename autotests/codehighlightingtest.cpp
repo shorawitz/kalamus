@@ -61,6 +61,61 @@ private Q_SLOTS:
         QCOMPARE(definition.isValid() ? definition.name() : QString(), expected);
     }
 
+    void shebangs_data()
+    {
+        QTest::addColumn<QString>("line");
+        QTest::addColumn<QString>("language");
+        QTest::newRow("env python3") << u"#!/usr/bin/env python3"_s << u"python"_s;
+        QTest::newRow("bash") << u"#!/bin/bash"_s << u"bash"_s;
+        QTest::newRow("env -S node") << u"#!/usr/bin/env -S node --flag"_s << u"javascript"_s;
+        QTest::newRow("python3.12") << u"#!/usr/local/bin/python3.12"_s << u"python"_s;
+        QTest::newRow("not a shebang") << u"import os"_s << QString();
+    }
+
+    void shebangs()
+    {
+        QFETCH(QString, line);
+        QFETCH(QString, language);
+        QCOMPARE(CodeHighlighter::languageFromShebang(line), language);
+    }
+
+    void unnamedScriptIsColouredFromItsShebang()
+    {
+        MarkdownEditor editor;
+        editor.loadMarkdown(u"```\n#!/usr/bin/env python3\ndef f():\n    return 1\n```\n\nEnd"_s);
+        settle();
+        QVERIFY(colorAt(editor, 3, 11).isValid()); // the number in "    return 1"
+    }
+
+    void codeBlockWrapsSelectedLines()
+    {
+        MarkdownEditor editor;
+        editor.loadMarkdown(u"Intro\nimport os\nprint(os.name)\nAfter"_s);
+        QTextCursor c = editor.textCursor();
+        c.setPosition(editor.markdown().indexOf(u"port os"_s)); // mid-line start
+        c.setPosition(editor.markdown().indexOf(u"name"_s), QTextCursor::KeepAnchor);
+        editor.setTextCursor(c);
+        QVERIFY(editor.selectionSpansLines());
+        editor.insertCodeBlock(u"python"_s);
+        QCOMPARE(editor.markdown(), u"Intro\n```python\nimport os\nprint(os.name)\n```\nAfter"_s);
+        settle();
+        QVERIFY(colorAt(editor, 2, 0).isValid()); // "import" is coloured
+        editor.undo();
+        QCOMPARE(editor.markdown(), u"Intro\nimport os\nprint(os.name)\nAfter"_s); // one undo step
+    }
+
+    void emptyCodeBlock()
+    {
+        MarkdownEditor editor;
+        editor.loadMarkdown(u"Text"_s);
+        QTextCursor c = editor.textCursor();
+        c.movePosition(QTextCursor::End);
+        editor.setTextCursor(c);
+        editor.insertCodeBlock(u"bash"_s);
+        QCOMPARE(editor.markdown(), u"Text\n```bash\n\n```"_s);
+        QCOMPARE(editor.textCursor().blockNumber(), 2);
+    }
+
     void keywordsAreColoured()
     {
         MarkdownEditor editor;

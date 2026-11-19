@@ -99,6 +99,10 @@ public:
     bool setContentWidth(qreal width);
     qreal contentWidth() const;
 
+Q_SIGNALS:
+    /// Some blocks were re-styled outside an edit (queued follow-ups).
+    void restyled();
+
 protected:
     void highlightBlock(const QString &text) override;
 

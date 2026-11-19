@@ -5,6 +5,7 @@
 #include "markdownhighlighter.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QScrollBar>
 #include <QTest>
 #include <QTextBlock>
 
@@ -28,6 +29,33 @@ private:
     const QString m_doc = u"Intro\n\n|a|b|\n|-|-|\n|1|2|\n\nAfter\n"_s;
 
 private Q_SLOTS:
+    void textAfterALongTableIsLaidOut()
+    {
+        // Regression: re-styling table rows while Qt was still laying the document out in
+        // steps made it stop at the table; everything after was invisible and unscrollable.
+        QString doc = u"# Title\n\n| Kind | Name | Notes |\n|---|---|---|\n"_s;
+        for (int i = 0; i < 120; ++i) {
+            doc += u"| tool/experiment/old | name-%1 | not found in repo root (may be a deploy folder, or by hand) |\n"_s.arg(i);
+        }
+        for (int i = 0; i < 100; ++i) {
+            doc += u"\nParagraph %1 after the table.\n"_s.arg(i);
+        }
+        MarkdownEditor editor;
+        editor.resize(600, 500);
+        editor.show();
+        editor.loadMarkdown(doc);
+        QCoreApplication::processEvents();
+        editor.resize(1100, 760); // the window restoring its saved size
+        QTest::qWait(300);
+
+        const QTextBlock last = editor.document()->lastBlock();
+        QVERIFY(last.layout()->lineCount() > 0);
+        auto *layout = editor.document()->documentLayout();
+        const qreal tableEnd = layout->blockBoundingRect(editor.document()->findBlockByNumber(124)).top();
+        QVERIFY2(layout->blockBoundingRect(last).top() > tableEnd + 100 * 20,
+                 qPrintable(u"table ends %1, last line at %2"_s.arg(tableEnd).arg(layout->blockBoundingRect(last).top())));
+    }
+
     void rowsFitWrappedText()
     {
         // A long cell wraps; its row must be as tall as the wrapped text, and the grid row

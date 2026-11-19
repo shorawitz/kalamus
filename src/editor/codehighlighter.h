@@ -30,6 +30,12 @@ public:
     /// The language for a fence's info string ("cpp", "Python", "sh", ...); invalid if unknown.
     KSyntaxHighlighting::Definition definitionFor(const QString &language);
 
+    /// The language a script's "#!" line names ("#!/usr/bin/env python3" -> "python"); "" if none.
+    static QString languageFromShebang(const QString &firstLine);
+
+    /// Names to offer when inserting a code block: common ones first, then all languages.
+    QStringList languageChoices();
+
     /// Pick the Breeze light or dark colours.
     void setDarkTheme(bool dark);
 

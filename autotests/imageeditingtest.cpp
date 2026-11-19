@@ -8,6 +8,7 @@
 #include <QBuffer>
 #include <QDir>
 #include <QTemporaryDir>
+#include <QScrollBar>
 #include <QTest>
 #include <QTextBlock>
 
@@ -77,6 +78,23 @@ private Q_SLOTS:
         const qreal top = layout->blockBoundingRect(editor.document()->findBlockByNumber(2)).top();
         const qreal next = layout->blockBoundingRect(editor.document()->findBlockByNumber(3)).top();
         QVERIFY2(qAbs((next - top) - 100) < 6, qPrintable(QString::number(next - top)));
+    }
+
+    void noHorizontalScrolling()
+    {
+        // Everything wraps or scales to the window, so there is never anything to scroll to.
+        for (int width : {700, 900, 1300}) {
+            MarkdownEditor editor;
+            editor.resize(width, 600);
+            editor.show();
+            editor.setBaseDirectory(m_dir.path());
+            editor.loadMarkdown(u"Intro text\n\n![h](<pics/huge one.png>)\n\nText ![s](pics/small.png) more text after it\n\nAfter"_s);
+            moveTo(editor, u"After"_s);
+            QTest::qWait(50);
+            QVERIFY2(editor.document()->size().width() <= editor.viewport()->width(),
+                     qPrintable(u"document %1 wider than viewport %2"_s.arg(editor.document()->size().width()).arg(editor.viewport()->width())));
+            QVERIFY(!editor.horizontalScrollBar()->isVisible());
+        }
     }
 
     void cursorOnTheLineShowsSource()

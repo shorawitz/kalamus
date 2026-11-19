@@ -228,6 +228,7 @@ void MarkdownHighlighter::scheduleRehighlight(const QTextBlock &block)
             if (!tracked.isNull()) {
                 rehighlightBlock(tracked.block());
                 updateActiveRange(); // the block may have just become (or stopped being) a table
+                Q_EMIT restyled();
             }
         },
         Qt::QueuedConnection);
@@ -334,6 +335,10 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         apply(0, text.size(), m_fence);
         if (!active) {
             apply(0, m.capturedEnd(1), m_hidden); // only the language name stays, dimmed
+        }
+        if (m_codeLanguage.isEmpty()) {
+            // No language named: a script's "#!" line can tell us.
+            m_codeLanguage = CodeHighlighter::languageFromShebang(currentBlock().next().text());
         }
         if (m_codeLanguage.isEmpty()) {
             m_codeLanguage = u" "_s; // still mark the block, for its background
@@ -520,8 +525,11 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
         }
         const QImage image = m_imageCache->image(url);
         QSizeF size = QSizeF(image.size()) / image.devicePixelRatio();
-        if (m_contentWidth > 0 && size.width() > m_contentWidth) {
-            size = size.scaled(m_contentWidth, size.height() * m_contentWidth / size.width(), Qt::KeepAspectRatio);
+        // A few pixels short of the full width: Qt's text layout rounds advances, and an
+        // overflow of even one pixel would make the page scroll sideways.
+        const qreal maxWidth = m_contentWidth - 4;
+        if (m_contentWidth > 0 && size.width() > maxWidth) {
+            size = size.scaled(maxWidth, size.height() * maxWidth / size.width(), Qt::KeepAspectRatio);
         }
         // Small images (badges, icons) sit on the baseline like text. Taller ones get a line
         // exactly their height and sit on its bottom, so no gap opens up below them.

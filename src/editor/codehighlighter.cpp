@@ -55,7 +55,8 @@ KSyntaxHighlighting::Definition CodeHighlighter::definitionFor(const QString &la
         // A syntax name, any case ("python", "YAML"), then a file extension ("py", "yml").
         const auto all = m_repository.definitions();
         for (const auto &candidate : all) {
-            if (candidate.name().compare(key, Qt::CaseInsensitive) == 0) {
+            if (candidate.name().compare(key, Qt::CaseInsensitive) == 0
+                || candidate.name().compare(QString(key).replace(u'-', u' '), Qt::CaseInsensitive) == 0) {
                 definition = candidate;
                 break;
             }
@@ -110,4 +111,51 @@ void CodeHighlighter::applyFormat(int offset, int length, const KSyntaxHighlight
         f.setFontStrikeOut(true);
     }
     m_spans->append({offset, length, f});
+}
+
+QString CodeHighlighter::languageFromShebang(const QString &firstLine)
+{
+    if (!firstLine.startsWith(u"#!"_s)) {
+        return {};
+    }
+    // "#!/usr/bin/env python3 -u" -> "python3", "#!/bin/bash" -> "bash"
+    QStringList words = firstLine.mid(2).trimmed().split(u' ', Qt::SkipEmptyParts);
+    if (!words.isEmpty() && words.first().endsWith(u"/env"_s)) {
+        words.removeFirst();
+        while (!words.isEmpty() && words.first().startsWith(u'-')) {
+            words.removeFirst(); // env -S ...
+        }
+    }
+    if (words.isEmpty()) {
+        return {};
+    }
+    QString interpreter = words.first().section(u'/', -1);
+    while (!interpreter.isEmpty() && (interpreter.back().isDigit() || interpreter.back() == u'.')) {
+        interpreter.chop(1); // python3.12 -> python
+    }
+    static const QHash<QString, QString> names{{u"node"_s, u"javascript"_s}, {u"nodejs"_s, u"javascript"_s}, {u"deno"_s, u"typescript"_s},
+                                               {u"pwsh"_s, u"powershell"_s}, {u"dash"_s, u"bash"_s},          {u"ksh"_s, u"bash"_s}};
+    return names.value(interpreter, interpreter);
+}
+
+QStringList CodeHighlighter::languageChoices()
+{
+    // Common ones first (as people write them after ```), then every other language by name.
+    QStringList choices{u"python"_s, u"bash"_s, u"javascript"_s, u"typescript"_s, u"json"_s, u"yaml"_s, u"cpp"_s, u"c"_s,
+                        u"java"_s,   u"go"_s,   u"rust"_s,       u"sql"_s,        u"html"_s, u"css"_s,  u"xml"_s, u"markdown"_s,
+                        u"diff"_s,   u"dockerfile"_s, u"ini"_s,  u"powershell"_s};
+    QStringList others;
+    const auto all = m_repository.definitions();
+    for (const auto &definition : all) {
+        if (definition.isHidden()) {
+            continue;
+        }
+        const QString name = definition.name().toLower().replace(u' ', u'-');
+        if (!choices.contains(name)) {
+            others.append(name);
+        }
+    }
+    others.sort(Qt::CaseInsensitive);
+    others.removeDuplicates();
+    return choices + others;
 }

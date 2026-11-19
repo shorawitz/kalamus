@@ -37,6 +37,8 @@ public:
     QString markdown() const;
 
     bool isInTable() const;
+    /// True when the selection covers more than one line.
+    bool selectionSpansLines() const;
 
     /// The document's folder, for relative image paths ("" for an unsaved document).
     void setBaseDirectory(const QString &directory);
@@ -66,6 +68,9 @@ public Q_SLOTS:
     void toggleStrikethrough();
     void toggleCode();
     void insertLink();
+    /// Wrap the selected lines in a ``` fenced code block (or insert an empty one).
+    /// @p language goes after the opening fence and picks the syntax colours.
+    void insertCodeBlock(const QString &language);
     /// 0 = paragraph, 1..6 = heading level. Applying the current level again turns it off.
     void setHeading(int level);
 
@@ -119,6 +124,10 @@ private:
     void updateMargins();
     /// Re-style every table (after the width tables may use has changed).
     void relayoutTables();
+    /// Qt lays large documents out in steps; re-styling blocks while that runs can make it
+    /// stop early, leaving everything below unlaid (invisible, unreachable by scrolling).
+    /// Lays out whatever was left.
+    void ensureFullyLaidOut();
 
     // Tables: editing
     std::optional<TableContext> tableAtCursor() const;
@@ -148,6 +157,7 @@ private:
     bool m_limitLineWidth = true;
     bool m_relayoutPending = false;
     bool m_imageRestylePending = false;
+    bool m_layoutCheckPending = false;
     ImageCache *m_imageCache = nullptr;
     std::function<bool()> m_saveRequester;
     mutable QHash<QString, QPixmap> m_scaledImages;

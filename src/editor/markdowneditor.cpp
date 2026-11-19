@@ -9,7 +9,9 @@
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QRegularExpression>
+#include <QScrollBar>
 #include <QTextBlock>
+#include <QTextLayout>
 
 using namespace Qt::StringLiterals;
 
@@ -61,6 +63,14 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     setBackgroundRole(QPalette::Base);
     setAutoFillBackground(true);
     setCursorWidth(2);
+    // Text wraps and tables/images fit the width, so there is nothing to scroll to sideways.
+    // Keep it that way even if something overflows by a rounding error.
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
+        if (value != 0) {
+            horizontalScrollBar()->setValue(0);
+        }
+    });
 
     QFont font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
     font.setPointSizeF(font.pointSizeF() * 1.15);
@@ -74,6 +84,18 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     m_imageCache = new ImageCache(this);
     m_highlighter->setImageCache(m_imageCache);
     connect(m_imageCache, &ImageCache::imageReady, this, &MarkdownEditor::restyleImageBlocks);
+    connect(m_highlighter, &MarkdownHighlighter::restyled, this, [this] {
+        if (!m_layoutCheckPending) {
+            m_layoutCheckPending = true;
+            QMetaObject::invokeMethod(
+                this,
+                [this] {
+                    m_layoutCheckPending = false;
+                    ensureFullyLaidOut();
+                },
+                Qt::QueuedConnection);
+        }
+    });
 
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] {
         m_highlighter->setActiveBlock(textCursor().block());
@@ -190,6 +212,43 @@ void MarkdownEditor::insertLink()
         const int urlStart = start + 1 + selected.size() + 2;
         c.setPosition(urlStart);
         c.setPosition(urlStart + placeholder.size(), QTextCursor::KeepAnchor);
+    }
+    c.endEditBlock();
+    setTextCursor(c);
+}
+
+bool MarkdownEditor::selectionSpansLines() const
+{
+    const QTextCursor c = textCursor();
+    return c.hasSelection() && document()->findBlock(c.selectionStart()) != document()->findBlock(c.selectionEnd());
+}
+
+void MarkdownEditor::insertCodeBlock(const QString &language)
+{
+    const QString fence = u"```"_s;
+    QTextCursor c = textCursor();
+    c.beginEditBlock();
+    if (c.hasSelection()) {
+        // Whole lines: from the start of the first selected line to the end of the last.
+        QTextCursor first(document());
+        first.setPosition(c.selectionStart());
+        QTextCursor last(document());
+        last.setPosition(c.selectionEnd());
+        if (last.positionInBlock() == 0 && c.selectionEnd() > c.selectionStart()) {
+            last.movePosition(QTextCursor::PreviousCharacter); // selection ended at a line start
+        }
+        last.movePosition(QTextCursor::EndOfBlock);
+        last.insertText(u'\n' + fence); // closing fence first, so the first position stays valid
+        first.movePosition(QTextCursor::StartOfBlock);
+        first.insertText(fence + language + u'\n');
+        c = last;
+    } else {
+        if (!c.block().text().trimmed().isEmpty()) {
+            c.movePosition(QTextCursor::EndOfBlock);
+            c.insertText(u"\n"_s);
+        }
+        c.insertText(fence + language + u"\n\n"_s + fence);
+        c.movePosition(QTextCursor::PreviousBlock); // into the empty line, ready to type
     }
     c.endEditBlock();
     setTextCursor(c);
@@ -368,9 +427,21 @@ void MarkdownEditor::restyleImageBlocks()
                     m_highlighter->rehighlightBlock(block);
                 }
             }
+            ensureFullyLaidOut();
             viewport()->update();
         },
         Qt::QueuedConnection);
+}
+
+void MarkdownEditor::ensureFullyLaidOut()
+{
+    for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
+        if (block.isVisible() && block.layout() && block.layout()->lineCount() == 0) {
+            const int from = block.position();
+            document()->markContentsDirty(from, document()->characterCount() - from);
+            return;
+        }
+    }
 }
 
 void MarkdownEditor::setLimitLineWidth(bool limit)
@@ -430,6 +501,7 @@ void MarkdownEditor::relayoutTables()
                     m_highlighter->rehighlightBlock(block);
                 }
             }
+            ensureFullyLaidOut();
             viewport()->update();
         },
         Qt::QueuedConnection);
