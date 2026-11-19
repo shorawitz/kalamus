@@ -9,6 +9,8 @@
 #include "imagecache.h"
 #include "tablelayout.h"
 
+#include <KSyntaxHighlighting/State>
+
 #include <QSizeF>
 #include <QTextBlockUserData>
 #include <QUrl>
@@ -37,6 +39,8 @@ class BlockRenderData : public QTextBlockUserData
 public:
     QList<MathSpan> math;
     QList<ImageSpan> images;
+    QString codeLanguage; ///< set on a fenced code block's lines ("" outside; " " if unnamed)
+    KSyntaxHighlighting::State codeState; ///< syntax state at the end of this line
 };
 
 /**
@@ -122,6 +126,8 @@ private:
     QTextCursor m_activeLast; // last block shown as source
     QList<MathSpan> m_mathSpans; // collected while highlighting the current block
     QList<ImageSpan> m_imageSpans;
+    QString m_codeLanguage;
+    KSyntaxHighlighting::State m_codeState;
     TableLayout *m_tableLayout = nullptr;
     ImageCache *m_imageCache = nullptr;
     qreal m_contentWidth = 0;

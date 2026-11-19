@@ -146,7 +146,7 @@ private Q_SLOTS:
         // Collapsed: everything after the first character uses the hidden (zero-width) format.
         bool hidden = false;
         for (const auto &range : header.layout()->formats()) {
-            if (range.start > 0 && range.format.fontLetterSpacingType() == QFont::PercentageSpacing && range.format.fontLetterSpacing() < 5) {
+            if (range.start > 0 && range.format.hasProperty(QTextFormat::FontLetterSpacing) && range.format.fontLetterSpacing() < 5) {
                 hidden = true;
             }
         }

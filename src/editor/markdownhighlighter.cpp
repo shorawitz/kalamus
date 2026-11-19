@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "markdownhighlighter.h"
+#include "codehighlighter.h"
 #include "markdowntable.h"
 #include "mathrenderer.h"
 
@@ -94,7 +95,10 @@ void MarkdownHighlighter::refreshStyles()
     m_code.setFontFamilies({fixed.family()});
     m_code.setBackground(pal.color(QPalette::AlternateBase));
 
-    m_codeBlock = m_code;
+    // Code blocks get a full-width background from the editor, so no per-character one.
+    m_codeBlock = QTextCharFormat();
+    m_codeBlock.setFontFamilies({fixed.family()});
+    CodeHighlighter::instance().setDarkTheme(pal.color(QPalette::Base).lightness() < 128);
 
     m_fence = QTextCharFormat();
     m_fence.setFontFamilies({fixed.family()});
@@ -174,6 +178,15 @@ void MarkdownHighlighter::updateActiveRange()
         while (last.next().isValid() && (last.next().userState() == TableDelimiter || last.next().userState() == TableRow)) {
             last = last.next();
         }
+    } else if (first.userState() == FencedBacktick || first.userState() == FencedTilde
+               || (first.previous().isValid() && (first.previous().userState() == FencedBacktick || first.previous().userState() == FencedTilde))) {
+        // A fenced code block shows its fences while the cursor is anywhere in it.
+        while (first.previous().isValid() && (first.previous().userState() == FencedBacktick || first.previous().userState() == FencedTilde)) {
+            first = first.previous();
+        }
+        while ((last.userState() == FencedBacktick || last.userState() == FencedTilde) && last.next().isValid()) {
+            last = last.next();
+        }
     } else if (first.userState() == MathBlock || first.userState() == MathBlockEnd) {
         // A $$ block shows as source in full while the cursor is anywhere in it.
         while (first.previous().isValid() && first.previous().userState() == MathBlock) {
@@ -239,6 +252,8 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     setCurrentBlockState(Normal);
     m_mathSpans.clear();
     m_imageSpans.clear();
+    m_codeLanguage.clear();
+    m_codeState = {};
 
     // YAML front matter at the very top of the file.
     if (currentBlock().blockNumber() == 0 && text == u"---"_s) {
@@ -259,10 +274,31 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         const auto m = kFenceClose.match(text);
         const QChar fenceChar = prev == FencedBacktick ? u'`' : u'~';
         if (m.hasMatch() && m.captured(1).at(0) == fenceChar) {
-            apply(0, text.size(), m_fence);
-        } else {
-            apply(0, text.size(), m_codeBlock);
-            setCurrentBlockState(prev);
+            apply(0, text.size(), active ? m_fence : m_hidden);
+            return flush(formats);
+        }
+        setCurrentBlockState(prev);
+        apply(0, text.size(), m_codeBlock);
+
+        // Syntax colours, carrying the highlighter's state from line to line.
+        const auto *above = dynamic_cast<BlockRenderData *>(currentBlock().previous().userData());
+        if (above && !above->codeLanguage.isEmpty()) {
+            const auto definition = CodeHighlighter::instance().definitionFor(above->codeLanguage);
+            if (definition.isValid()) {
+                QList<CodeHighlighter::Span> spans;
+                m_codeState = CodeHighlighter::instance().highlight(text, above->codeState, definition, &spans);
+                m_codeLanguage = above->codeLanguage;
+                for (const auto &span : std::as_const(spans)) {
+                    apply(span.start, span.length, span.format);
+                }
+                // A change here (e.g. an unclosed comment) can change every line below, but
+                // QSyntaxHighlighter only moves on when the block's int state changes.
+                const auto *before = dynamic_cast<BlockRenderData *>(currentBlock().userData());
+                const QTextBlock next = currentBlock().next();
+                if (before ? !(before->codeState == m_codeState) : next.userData() != nullptr) {
+                    scheduleRehighlight(next);
+                }
+            }
         }
         return flush(formats);
     }
@@ -292,8 +328,16 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     }
 
     if (const auto m = kFenceOpen.match(text); m.hasMatch()) {
-        apply(0, text.size(), m_fence);
         setCurrentBlockState(m.captured(1).at(0) == u'`' ? FencedBacktick : FencedTilde);
+        // ```lang: the lines below are coloured as that language.
+        m_codeLanguage = text.mid(m.capturedEnd(1)).trimmed().section(u' ', 0, 0);
+        apply(0, text.size(), m_fence);
+        if (!active) {
+            apply(0, m.capturedEnd(1), m_hidden); // only the language name stays, dimmed
+        }
+        if (m_codeLanguage.isEmpty()) {
+            m_codeLanguage = u" "_s; // still mark the block, for its background
+        }
         return flush(formats);
     }
 
@@ -684,12 +728,14 @@ QString MarkdownHighlighter::displayMathSource(const QTextBlock &opening, int *l
 
 void MarkdownHighlighter::flush(const FormatList &formats)
 {
-    if (m_mathSpans.isEmpty() && m_imageSpans.isEmpty()) {
+    if (m_mathSpans.isEmpty() && m_imageSpans.isEmpty() && m_codeLanguage.isEmpty()) {
         setCurrentBlockUserData(nullptr);
     } else {
         auto *data = new BlockRenderData;
         data->math = m_mathSpans;
         data->images = m_imageSpans;
+        data->codeLanguage = m_codeLanguage;
+        data->codeState = m_codeState;
         setCurrentBlockUserData(data);
     }
 

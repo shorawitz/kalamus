@@ -136,6 +136,8 @@ private:
 
     // Math and images: drawing
     void paintInlineObjects(QPainter &painter) const;
+    /// Full-width backgrounds behind fenced code blocks (drawn before the text).
+    void paintCodeBackgrounds(QPainter &painter) const;
     /// Re-style lines with images (after one finished loading).
     void restyleImageBlocks();
 

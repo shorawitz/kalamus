@@ -10,6 +10,7 @@ add_library(kalamuscore STATIC
     editor/markdowntable.cpp editor/markdowntable.h
     editor/tablelayout.cpp editor/tablelayout.h
     editor/imagecache.cpp editor/imagecache.h
+    editor/codehighlighter.cpp editor/codehighlighter.h
 )
 # JKQTMathText's header has const char* default arguments for QString parameters.
 set_source_files_properties(mathrenderer.cpp PROPERTIES COMPILE_OPTIONS "-UQT_NO_CAST_FROM_ASCII")
@@ -20,6 +21,7 @@ target_link_libraries(kalamuscore PUBLIC
     Qt6::Network
     KF6::I18n
     KF6::WidgetsAddons
+    KF6::SyntaxHighlighting
     PkgConfig::CMARK_GFM
     ${CMARK_GFM_EXTENSIONS_LIBRARY}
     jkqtmathtext

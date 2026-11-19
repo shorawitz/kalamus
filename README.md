@@ -70,7 +70,8 @@ only its LaTeX math renderer is compiled in.
       exported as KaTeX in HTML and as images in PDF
 - [x] Images drawn in place (local, web, data:), scaled to the text width; linked
       badges too; missing files get a red underline; fitted to the page in PDF
-- [ ] Code block syntax highlighting (KSyntaxHighlighting) with full-width background
+- [x] Code blocks coloured by KSyntaxHighlighting (Kate's engine, 300+ languages,
+      Breeze light/dark), full-width background, fences hidden outside the block
 - [ ] Spell checking (Sonnet)
 - [ ] Outline panel (headings), find/replace, recent files
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/

@@ -78,3 +78,45 @@ void MarkdownEditor::paintInlineObjects(QPainter &painter) const
         }
     }
 }
+
+void MarkdownEditor::paintCodeBackgrounds(QPainter &painter) const
+{
+    auto fenced = [](const QTextBlock &block) {
+        return block.isValid() && (block.userState() == MarkdownHighlighter::FencedBacktick || block.userState() == MarkdownHighlighter::FencedTilde);
+    };
+    QAbstractTextDocumentLayout *layout = document()->documentLayout();
+    const QPointF offset(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
+    const qreal bottom = viewport()->height();
+    const qreal margin = document()->documentMargin();
+    const qreal left = margin - 10;
+    const qreal width = viewport()->width() - 2 * margin + 20;
+
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(palette().color(QPalette::AlternateBase));
+
+    // Start at the opening fence of a block that begins above the top of the view.
+    QTextBlock block = cursorForPosition(QPoint(0, 0)).block();
+    while (fenced(block.previous())) {
+        block = block.previous();
+    }
+    while (block.isValid()) {
+        const qreal top = layout->blockBoundingRect(block).translated(offset).top();
+        if (top > bottom) {
+            break;
+        }
+        if (!fenced(block) || fenced(block.previous())) {
+            block = block.next();
+            continue;
+        }
+        // From the opening fence through the closing one (or the end of the document).
+        QTextBlock last = block;
+        while (fenced(last) && last.next().isValid()) {
+            last = last.next();
+        }
+        const qreal end = last.next().isValid() ? layout->blockBoundingRect(last.next()).translated(offset).top()
+                                                : layout->blockBoundingRect(last).translated(offset).bottom();
+        painter.drawRoundedRect(QRectF(left, top - 4, width, end - top + 4), 6, 6);
+        block = last.next();
+    }
+}

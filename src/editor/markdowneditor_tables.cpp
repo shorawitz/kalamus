@@ -469,7 +469,12 @@ bool MarkdownEditor::tableHitTest(const QPoint &pos, QTextCursor *cursor) const
 
 void MarkdownEditor::paintEvent(QPaintEvent *event)
 {
-    QTextEdit::paintEvent(event);
+    {
+        QPainter background(viewport());
+        background.setClipRegion(event->region());
+        paintCodeBackgrounds(background);
+    }
+    QTextEdit::paintEvent(event); // the text, on top of the code backgrounds
     QPainter painter(viewport());
     painter.setClipRegion(event->region());
     paintInlineObjects(painter);

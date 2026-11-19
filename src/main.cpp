@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QIcon>
+#include <QPalette>
 #include <QTimer>
 
 #include <KAboutData>
@@ -37,6 +38,23 @@ int main(int argc, char **argv)
     parser.addOption(grabOption);
     parser.process(app);
     about.processCommandLine(&parser);
+
+    if (parser.isSet(grabOption) && qEnvironmentVariableIsSet("KALAMUS_GRAB_DARK")) {
+        // Developer aid: Breeze Dark colours for off-screen screenshots.
+        QPalette dark;
+        dark.setColor(QPalette::Window, QColor(0x20, 0x23, 0x26));
+        dark.setColor(QPalette::WindowText, QColor(0xfc, 0xfc, 0xfc));
+        dark.setColor(QPalette::Base, QColor(0x14, 0x16, 0x18));
+        dark.setColor(QPalette::AlternateBase, QColor(0x1d, 0x1f, 0x22));
+        dark.setColor(QPalette::Text, QColor(0xfc, 0xfc, 0xfc));
+        dark.setColor(QPalette::Button, QColor(0x29, 0x2c, 0x30));
+        dark.setColor(QPalette::ButtonText, QColor(0xfc, 0xfc, 0xfc));
+        dark.setColor(QPalette::Highlight, QColor(0x3d, 0xae, 0xe9));
+        dark.setColor(QPalette::Link, QColor(0x1d, 0x99, 0xf3));
+        dark.setColor(QPalette::LinkVisited, QColor(0x9b, 0x59, 0xb6));
+        dark.setColor(QPalette::PlaceholderText, QColor(0xa1, 0xa9, 0xb1));
+        QApplication::setPalette(dark);
+    }
 
     auto *window = new MainWindow;
     const QStringList args = parser.positionalArguments();
