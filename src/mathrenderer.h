@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QColor>
+#include <QFont>
 #include <QHash>
 #include <QImage>
 #include <QString>
@@ -34,6 +35,10 @@ public:
     QImage render(const QString &latex, bool display, qreal pixelSize, const QColor &color, qreal devicePixelRatio);
 
     void clearCache();
+
+    /// The pixel size that makes formulas look as big as text in @p textFont at @p textPixelSize:
+    /// lowercase letters of the same height (the math font's are shorter than most UI fonts').
+    qreal matchingPixelSize(const QFont &textFont, qreal textPixelSize) const;
 
 private:
     MathRenderer();

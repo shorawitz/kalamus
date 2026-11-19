@@ -3,6 +3,7 @@
 
 #include "mathrenderer.h"
 
+#include <QFontMetricsF>
 #include <QPainter>
 
 #include <jkqtmathtext/jkqtmathtext.h>
@@ -31,6 +32,12 @@ MathRenderer::MathRenderer()
     : m_math(std::make_unique<JKQTMathText>())
 {
     m_math->useXITS();
+    // Letters from XITS, which has a real italic. XITS Math has none, and the slanted
+    // stand-in Qt makes for it reports glyphs far too wide, leaving gaps after letters.
+    // Symbols still come from XITS Math (the fallback symbol font).
+    m_math->setFontMathRoman(u"XITS"_s, MTFEUnicode);
+    // Room around + - = < > close to TeX's (the library's default of 1.5 looks cramped).
+    m_math->setMathoperatorWidthFactor(1.8);
 }
 
 MathRenderer::~MathRenderer() = default;
@@ -43,7 +50,8 @@ bool MathRenderer::parse(const QString &latex, bool display, qreal pixelSize)
     }
     m_parsedKey = key;
     m_math->setFontSizePixels(pixelSize);
-    const QString markup = display ? u"\\displaystyle "_s + latex : latex;
+    // Inline formulas use TeX's text style: smaller fractions and operators, so they fit the line.
+    const QString markup = (display ? u"\\displaystyle "_s : u"\\textstyle "_s) + latex;
     JKQTMathText::ParseOptions options;
     options.setFlag(JKQTMathText::StartWithMathMode);
     options.setFlag(JKQTMathText::AllowLinebreaks);
@@ -111,6 +119,21 @@ QImage MathRenderer::render(const QString &latex, bool display, qreal pixelSize,
     }
     m_images.insert(key, image);
     return image;
+}
+
+qreal MathRenderer::matchingPixelSize(const QFont &textFont, qreal textPixelSize) const
+{
+    constexpr int reference = 100; // measure at a large size, where rounding doesn't matter
+    QFont text(textFont);
+    text.setPixelSize(reference);
+    QFont math(u"XITS"_s);
+    math.setPixelSize(reference);
+    const qreal textX = QFontMetricsF(text).xHeight();
+    const qreal mathX = QFontMetricsF(math).xHeight();
+    if (textX <= 0 || mathX <= 0) {
+        return textPixelSize;
+    }
+    return textPixelSize * qBound(1.0, textX / mathX, 1.4);
 }
 
 void MathRenderer::clearCache()

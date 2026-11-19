@@ -417,7 +417,7 @@ bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const 
     doc.setDefaultStyleSheet(kPrintCss);
     // Formulas become images, rendered at 4x for crisp print.
     QList<MathItem> math;
-    const qreal pixelSize = doc.defaultFont().pointSizeF() * screenPixelsPerPoint();
+    const qreal pixelSize = MathRenderer::instance().matchingPixelSize(doc.defaultFont(), doc.defaultFont().pointSizeF() * screenPixelsPerPoint());
     const QString html = restoreMath(colorCodeBlocks(toHtmlFragment(protectMath(markdown, &math)), nullptr), math, [&](int i, bool block) -> QString {
         const MathItem &item = math.at(i);
         const auto metrics = MathRenderer::instance().measure(item.latex, item.display, pixelSize);

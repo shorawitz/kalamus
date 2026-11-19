@@ -1,0 +1,2 @@
+# Patches must keep their exact bytes (one patched file uses CRLF line endings).
+*.patch -text

@@ -944,7 +944,8 @@ qreal MarkdownHighlighter::mathPixelSize(bool display) const
     const QScreen *screen = QGuiApplication::primaryScreen();
     const qreal dpi = screen ? screen->logicalDotsPerInchY() : 96.0;
     const qreal points = document()->defaultFont().pointSizeF() > 0 ? document()->defaultFont().pointSizeF() : 11.0;
-    return points * dpi / 72.0 * (display ? 1.15 : 1.0);
+    Q_UNUSED(display) // display formulas get bigger operators from \displaystyle, not a bigger font
+    return MathRenderer::instance().matchingPixelSize(document()->defaultFont(), points * dpi / 72.0);
 }
 
 void MarkdownHighlighter::setTableLayout(TableLayout *layout)

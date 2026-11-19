@@ -1,0 +1,88 @@
+diff --git a/lib/jkqtmathtext/jkqtmathtext.cpp b/lib/jkqtmathtext/jkqtmathtext.cpp
+index 405722f8..43ea6d45 100644
+--- a/lib/jkqtmathtext/jkqtmathtext.cpp
++++ b/lib/jkqtmathtext/jkqtmathtext.cpp
+@@ -500,7 +500,9 @@ void JKQTMathText::setFontSizePixels(double __value)
+ 
+ double JKQTMathText::getFontSize() const
+ {
+-    return getFontPointSize();
++    // Kalamus patch: the size in its own unit. Instructions such as \displaystyle reset the
++    // environment's size with this; returning -1 for a pixel size left them at Qt's default.
++    return fontSize;
+ }
+ 
+ double JKQTMathText::getFontPointSize() const
+diff --git a/lib/jkqtmathtext/nodes/jkqtmathtextsymbolnode.cpp b/lib/jkqtmathtext/nodes/jkqtmathtextsymbolnode.cpp
+index 2a3c8001..0d1b82f1 100644
+--- a/lib/jkqtmathtext/nodes/jkqtmathtextsymbolnode.cpp
++++ b/lib/jkqtmathtext/nodes/jkqtmathtextsymbolnode.cpp
+@@ -22,6 +22,8 @@
+ #include "jkqtmathtext/nodes/jkqtmathtextsymbolnode.h"
+ #include "jkqtmathtext/jkqtmathtexttools.h"
+ #include "jkqtmathtext/jkqtmathtext.h"
++#include "jkqtmathtext/nodes/jkqtmathtexthorizontallistnode.h"
++#include "jkqtmathtext/nodes/jkqtmathtexttextnode.h"
+ #include "jkqtcommon/jkqtpcodestructuring.h"
+ #include "jkqtcommon/jkqtpstringtools.h"
+ #include "jkqtcommon/jkqtpdebuggingtools.h"
+@@ -234,6 +236,32 @@ QString JKQTMathTextSymbolNode::getSymbolName() const {
+     return this->symbolName;
+ }
+ 
++namespace {
++    // Kalamus patch: a + or - that starts an expression (-1, x^{-1}, (-y), a = -b) is a sign,
++    // not a binary operator, so it gets no operator spacing (as in TeX).
++    bool isUnarySign(const JKQTMathTextNode* node, const QString& symbolName) {
++        if (symbolName!="-" && symbolName!="+") return false;
++        const auto* list=dynamic_cast<const JKQTMathTextHorizontalListNode*>(node->getParentNode());
++        if (!list) return true;
++        int index=-1;
++        for (int i=0; i<list->childCount(); i++) {
++            if (list->getChild(i)==node) { index=i; break; }
++        }
++        if (index<0) return false; // not found (the tree was rearranged): treat as an operator
++        if (index==0) return true;
++        const JKQTMathTextNode* previous=list->getChild(index-1);
++        if (dynamic_cast<const JKQTMathTextSymbolNode*>(previous)) {
++            const QString name=static_cast<const JKQTMathTextSymbolNode*>(previous)->getSymbolName();
++            return name=="=" || name=="+" || name=="-" || name=="<" || name==">" || name=="*";
++        }
++        if (const auto* text=dynamic_cast<const JKQTMathTextTextNode*>(previous)) {
++            const QString t=text->getText().trimmed();
++            return t.isEmpty() || QString("([{,;").contains(t.back());
++        }
++        return false;
++    }
++}
++
+ JKQTMathTextSymbolNode::NodeSize JKQTMathTextSymbolNode::getSymbolSize(QPainter &painter, JKQTMathTextEnvironment currentEv) const
+ {
+ #ifdef JKQTBP_AUTOTIMER
+@@ -255,7 +283,9 @@ JKQTMathTextSymbolNode::NodeSize JKQTMathTextSymbolNode::getSymbolSize(QPainter
+     const QRectF dottbr=JKQTMathTextGetTightBoundingRect(f, ".", painter.device());
+     //const double yShift=symprops.yShiftFactor*tbr.height();
+ 
+-    if (currentEv.insideMath) {
++    if (currentEv.insideMath && isUnarySign(this, symbolName)) {
++        s.width=br.width();
++    } else if (currentEv.insideMath) {
+         s.width=qMax(br.width(), mintbr.width());
+         if (has(globalFlags, SmallExtendWidthInMathmode)) {
+             if (!symprops.getSymbolSingleChar().isNull()) s.width=s.width*(1.0+(parentMathText->getMathoperatorWidthFactor()-1.0)/5.0);
+@@ -1218,7 +1248,14 @@ QPair<QFont, JKQTMathTextSymbolNode::SymbolProps> JKQTMathTextSymbolNode::Symbol
+ 
+     outFont=currentEv.getFont(parent);
+     outFont.setStyleStrategy(QFont::PreferDefault);
+-    if (outProps.fontScalingFactor!=1) outFont.setPointSizeF(outFont.pointSizeF()*outProps.fontScalingFactor);
++    // Kalamus patch: scale pixel-sized fonts too, and draw big operators (sum, product,
++    // integral ...) larger in display style, as TeX does.
++    double scaling=outProps.fontScalingFactor;
++    if (has(globalFlags, SubSuperscriptBelowAboveSymbol) && currentEv.insideMath && !currentEv.insideMathUseTextStyle) scaling*=1.4;
++    if (scaling!=1) {
++        if (outFont.pixelSize()>0) outFont.setPixelSize(qMax(1, qRound(outFont.pixelSize()*scaling)));
++        else outFont.setPointSizeF(outFont.pointSizeF()*scaling);
++    }
+     if (has(outProps.flags, ItalicOn)) outFont.setItalic(true);
+     if (has(outProps.flags, ItalicOff)) outFont.setItalic(false);
+     if (has(outProps.flags, BoldOn)) outFont.setBold(true);

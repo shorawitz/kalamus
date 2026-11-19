@@ -5,6 +5,7 @@
 # JKQtPlotter repository. We download that source at a pinned commit and compile only
 # the two parts we need into a private static library, without running JKQtPlotter's
 # own CMake (which would also install its libraries and headers next to Kalamus).
+# jkqtmathtext-kalamus.patch fixes a few rendering bugs; it is LGPL like the code it changes.
 # The bundled XITS fonts are under the SIL Open Font License 1.1.
 
 include(FetchContent)
@@ -12,6 +13,10 @@ FetchContent_Declare(jkqtplotter
     GIT_REPOSITORY https://github.com/jkriege2/JKQtPlotter.git
     GIT_TAG 9e9f0af8b140192e3de7ff866a0013e7da5e1e93 # master, 2026-10-23
     SOURCE_SUBDIR do-not-add # download only
+    # Our fixes (see the patch file): display-style sizes, big operators, unary signs.
+    # Applied once; skipped when already applied, so re-configuring is safe.
+    PATCH_COMMAND sh -c "git apply --reverse --check '${CMAKE_CURRENT_SOURCE_DIR}/jkqtmathtext-kalamus.patch' 2>/dev/null || git apply '${CMAKE_CURRENT_SOURCE_DIR}/jkqtmathtext-kalamus.patch'"
+    UPDATE_DISCONNECTED TRUE
 )
 FetchContent_MakeAvailable(jkqtplotter)
 

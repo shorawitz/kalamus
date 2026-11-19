@@ -12,6 +12,41 @@ class MathRendererTest : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    // Regressions from issues #1 and #2 (fixed in 3rdparty/jkqtmathtext-kalamus.patch and MathRenderer).
+    void sizeFollowsTheTextSize()
+    {
+        auto &math = MathRenderer::instance();
+        for (bool display : {false, true}) {
+            const qreal small = math.measure(u"a+b"_s, display, 14).width;
+            const qreal large = math.measure(u"a+b"_s, display, 28).width;
+            QVERIFY2(large > small * 1.7, qPrintable(u"display=%1: %2 vs %3"_s.arg(display).arg(small).arg(large)));
+        }
+    }
+
+    void italicLettersHaveNoTrailingGap()
+    {
+        auto &math = MathRenderer::instance();
+        // One "b" is about half of "bb"; the slanted stand-in italic made it nearly as wide.
+        QVERIFY(math.measure(u"b"_s, false, 14).width < math.measure(u"bb"_s, false, 14).width * 0.65);
+    }
+
+    void signsAreNotSpacedLikeOperators()
+    {
+        auto &math = MathRenderer::instance();
+        const qreal sign = math.measure(u"(-y)"_s, false, 28).width;
+        const qreal minus = math.measure(u"(a-y)"_s, false, 28).width;
+        const qreal a = math.measure(u"a"_s, false, 28).width;
+        QVERIFY(minus - sign > a + 4); // the binary minus gets room on both sides
+    }
+
+    void bigOperatorsGrowInDisplayStyle()
+    {
+        auto &math = MathRenderer::instance();
+        const auto inlineSum = math.measure(u"\\sum x"_s, false, 14);
+        const auto displaySum = math.measure(u"\\sum x"_s, true, 14);
+        QVERIFY(displaySum.ascent + displaySum.descent > (inlineSum.ascent + inlineSum.descent) * 1.2);
+    }
+
     void rendersCommonFormulas_data()
     {
         QTest::addColumn<QString>("latex");

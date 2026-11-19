@@ -35,7 +35,8 @@ only its LaTeX math renderer is compiled in.
 
 ## Third-party code
 
-- **JKQTMathText** from [JKQtPlotter](https://github.com/jkriege2/JKQtPlotter), LGPL-2.1-or-later
+- **JKQTMathText** from [JKQtPlotter](https://github.com/jkriege2/JKQtPlotter), LGPL-2.1-or-later,
+  with a few rendering fixes in `3rdparty/jkqtmathtext-kalamus.patch`
 - **XITS math fonts** (bundled with JKQTMathText), SIL Open Font License 1.1
 - **cmark-gfm**, BSD-2-Clause (system library)
 
