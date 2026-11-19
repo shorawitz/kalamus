@@ -7,6 +7,8 @@
 
 class FileTree;
 class KRecentFilesAction;
+class KSelectAction;
+class QAction;
 class FindBar;
 class OutlinePanel;
 class QTimer;
@@ -24,6 +26,10 @@ public:
     void openPath(const QString &path);
     /// Reopens the folder and file from the last session.
     void restoreSession();
+
+public Q_SLOTS:
+    /// Bring the editor and the menu switches in line with KalamusSettings.
+    void applySettings();
 
 protected:
     bool queryClose() override;
@@ -46,6 +52,7 @@ private:
     /// Put @p path at the top of File > Open Recent.
     void rememberRecent(const QString &path);
     void refreshOutline();
+    void showSettings();
 
     MarkdownEditor *m_editor;
     FileTree *m_tree;
@@ -56,4 +63,7 @@ private:
     QTimer *m_outlineTimer;
     QString m_path;
     KRecentFilesAction *m_recentFiles = nullptr;
+    QAction *m_limitWidth = nullptr;
+    QAction *m_checkSpelling = nullptr;
+    KSelectAction *m_spellingLanguage = nullptr;
 };

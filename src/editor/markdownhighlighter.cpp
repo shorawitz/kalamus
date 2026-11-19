@@ -57,7 +57,7 @@ void MarkdownHighlighter::refreshStyles()
     const QPalette pal = QGuiApplication::palette();
     const QFont base = document()->defaultFont();
     const qreal size = base.pointSizeF() > 0 ? base.pointSizeF() : 11.0;
-    const QFont fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QFont fixed = m_codeFont.family().isEmpty() ? QFontDatabase::systemFont(QFontDatabase::FixedFont) : m_codeFont;
     const QColor dim = pal.color(QPalette::PlaceholderText);
 
     m_hidden = QTextCharFormat();
@@ -631,6 +631,11 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
             }
         }
     }
+}
+
+void MarkdownHighlighter::setCodeFont(const QFont &font)
+{
+    m_codeFont = font;
 }
 
 void MarkdownHighlighter::setSpellChecker(SpellChecker *checker)

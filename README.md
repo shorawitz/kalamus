@@ -53,6 +53,7 @@ only its LaTeX math renderer is compiled in.
 | Ctrl+Shift+O | Open folder in the Files panel |
 | F9 | Show/hide the Files panel |
 | Shift+F9 | Show/hide the Outline panel (click a heading to jump to it) |
+| Ctrl+Shift+, | Settings |
 | Shift+F7 | Spell checking on/off (right-click a word for suggestions) |
 | Ctrl+F / Ctrl+R | Find / find and replace (bar under the page; Esc closes) |
 | F3 / Shift+F3 | Next / previous match |
@@ -86,7 +87,8 @@ only its LaTeX math renderer is compiled in.
 - [x] Recent files (File → Open Recent; moved or deleted files drop off)
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/
       when they live outside the document's folder); Insert Image
-- [ ] Settings: font, line width, theme
+- [x] Settings (Settings → Configure Kalamus): color scheme, text and code fonts,
+  reading width, spelling, loading images from the web
 
 ### Later
 - Focus / typewriter mode, word count

@@ -33,8 +33,8 @@ class MarkdownEditor : public QTextEdit
     Q_OBJECT
 
 public:
-    /// Width of the text column when Limit Line Width is on, in em.
-    static constexpr int ReadableWidthEm = 66;
+    /// Default width of the text column when Limit Line Width is on, in em.
+    static constexpr int DefaultReadableWidth = 66;
 
     explicit MarkdownEditor(QWidget *parent = nullptr);
 
@@ -65,6 +65,15 @@ public:
     /// Keep text at a comfortable reading width (centered), or use the full window width.
     void setLimitLineWidth(bool limit);
     bool limitLineWidth() const;
+    /// The reading width in em (about 860 px at the default font for 66, like Typora).
+    void setReadableWidth(int em);
+    int readableWidth() const;
+
+    /// Font for code, math source and table source (only its family; sizes follow the text).
+    void setCodeFont(const QFont &font);
+    /// Fetch http(s) images, or show a note in their place.
+    void setLoadRemoteImages(bool load);
+    bool loadRemoteImages() const;
     /// Spell checking: on or off, and the dictionary ("" = the system's default).
     void setSpellCheckingEnabled(bool enabled);
     bool spellCheckingEnabled() const;
@@ -180,6 +189,7 @@ private:
     bool m_inTable = false;
     std::unique_ptr<TableLayout> m_tableLayout;
     bool m_limitLineWidth = true;
+    int m_readableWidth = DefaultReadableWidth;
     bool m_relayoutPending = false;
     bool m_imageRestylePending = false;
     bool m_layoutCheckPending = false;

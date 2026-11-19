@@ -70,12 +70,27 @@ ImageCache::Status ImageCache::status(const QUrl &url)
     }
     Entry &entry = m_entries[url];
     if (url.scheme() == u"http"_s || url.scheme() == u"https"_s) {
+        if (!m_loadRemote) {
+            entry.status = Status::Failed;
+            entry.error = i18n("Images from the web are turned off in the settings.");
+            return entry.status;
+        }
         entry.status = Status::Loading;
         loadRemote(url);
     } else {
         loadLocal(url, entry);
     }
     return entry.status;
+}
+
+void ImageCache::setLoadRemote(bool load)
+{
+    m_loadRemote = load;
+}
+
+bool ImageCache::loadsRemote() const
+{
+    return m_loadRemote;
 }
 
 QImage ImageCache::image(const QUrl &url) const

@@ -88,6 +88,8 @@ public:
 
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();
+    /// The family used for code, math source and table source (size follows the text).
+    void setCodeFont(const QFont &font);
 
     /// Pixel size formulas are rendered at, matching the editor's text.
     qreal mathPixelSize(bool display) const;
@@ -140,6 +142,7 @@ private:
     ImageCache *m_imageCache = nullptr;
     SpellChecker *m_spellChecker = nullptr;
     qreal m_contentWidth = 0;
+    QFont m_codeFont;
 
     QTextCharFormat m_hidden;
     QTextCharFormat m_strut; // invisible, but keeps the line at full height

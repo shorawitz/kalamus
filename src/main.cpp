@@ -15,6 +15,9 @@
 #include <QTimer>
 
 #include <KAboutData>
+#include <KActionCollection>
+#include <KColorSchemeManager>
+#include <KConfigDialog>
 #include <KLocalizedString>
 
 using namespace Qt::StringLiterals;
@@ -32,6 +35,8 @@ int main(int argc, char **argv)
                      i18n("© 2026 David Christensen"));
     about.setDesktopFileName(u"io.github.shorawitz.Kalamus"_s);
     KAboutData::setApplicationData(about);
+    // Applies the color scheme picked in Settings (or follows Plasma's) before any window shows.
+    KColorSchemeManager::instance();
     // The installed theme icon wins; the built-in copy covers running from the build folder.
     QApplication::setWindowIcon(QIcon::fromTheme(u"io.github.shorawitz.Kalamus"_s, QIcon(u":/icons/kalamus.svg"_s)));
 
@@ -93,8 +98,16 @@ int main(int argc, char **argv)
                 }
             });
         }
-        QTimer::singleShot(1000, window, [window, target] {
-            window->grab().save(target);
+        // KALAMUS_GRAB_SETTINGS=1 grabs Settings > Configure Kalamus instead of the window.
+        const bool settings = qEnvironmentVariableIntValue("KALAMUS_GRAB_SETTINGS") > 0;
+        if (settings) {
+            QTimer::singleShot(400, window, [window] {
+                window->actionCollection()->action(u"options_configure"_s)->trigger();
+            });
+        }
+        QTimer::singleShot(1000, window, [window, target, settings] {
+            QWidget *dialog = settings ? window->findChild<KConfigDialog *>() : nullptr;
+            (dialog ? dialog : static_cast<QWidget *>(window))->grab().save(target);
             QApplication::quit();
         });
     }

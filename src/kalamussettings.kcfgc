@@ -1,0 +1,4 @@
+File=kalamus.kcfg
+ClassName=KalamusSettings
+Singleton=true
+Mutators=true

@@ -397,6 +397,7 @@ void MarkdownEditor::changeEvent(QEvent *event)
         m_tableLayout->setFont(font());
         m_highlighter->refreshStyles();
         updateMargins();
+        QMetaObject::invokeMethod(this, &MarkdownEditor::ensureFullyLaidOut, Qt::QueuedConnection);
     }
 }
 
@@ -477,14 +478,50 @@ bool MarkdownEditor::limitLineWidth() const
     return m_limitLineWidth;
 }
 
+void MarkdownEditor::setReadableWidth(int em)
+{
+    if (em != m_readableWidth) {
+        m_readableWidth = em;
+        updateMargins();
+    }
+}
+
+int MarkdownEditor::readableWidth() const
+{
+    return m_readableWidth;
+}
+
+void MarkdownEditor::setCodeFont(const QFont &font)
+{
+    m_highlighter->setCodeFont(font);
+    m_highlighter->refreshStyles();
+    QMetaObject::invokeMethod(this, &MarkdownEditor::ensureFullyLaidOut, Qt::QueuedConnection);
+}
+
+void MarkdownEditor::setLoadRemoteImages(bool load)
+{
+    if (load == m_imageCache->loadsRemote()) {
+        return;
+    }
+    m_imageCache->setLoadRemote(load);
+    m_imageCache->clear();
+    m_scaledImages.clear();
+    restyleImageBlocks();
+}
+
+bool MarkdownEditor::loadRemoteImages() const
+{
+    return m_imageCache->loadsRemote();
+}
+
 void MarkdownEditor::updateMargins()
 {
-    // Readable width: about 66em of text (860 px at the default font, like Typora), centered
+    // Readable width: m_readableWidth em of text (66em = 860 px at the default font, like Typora), centered
     // like a page. Otherwise the text uses the whole window.
     int side = 0;
     if (m_limitLineWidth) {
         const qreal em = QFontInfo(font()).pixelSize();
-        const int maxWidth = qRound(em * ReadableWidthEm + 2 * document()->documentMargin());
+        const int maxWidth = qRound(em * m_readableWidth + 2 * document()->documentMargin());
         side = qMax(0, (width() - maxWidth) / 2);
     }
     setViewportMargins(side, 0, side, 0);

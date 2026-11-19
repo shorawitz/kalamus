@@ -20,9 +20,7 @@ ecm_add_tests(
 
 # The main window, built from its sources (the app itself has no library).
 ecm_add_test(mainwindowtest.cpp
-    ${CMAKE_SOURCE_DIR}/src/mainwindow.cpp
-    ${CMAKE_SOURCE_DIR}/src/filetree.cpp
     ${CMAKE_SOURCE_DIR}/src/kalamus.qrc
     TEST_NAME mainwindowtest
-    LINK_LIBRARIES kalamuscore Qt6::Test KF6::ConfigCore KF6::ConfigWidgets KF6::CoreAddons KF6::WidgetsAddons KF6::XmlGui
+    LINK_LIBRARIES kalamusui Qt6::Test
 )

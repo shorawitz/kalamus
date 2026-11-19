@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-FileCopyrightText: 2026 David Christensen
+     SPDX-License-Identifier: GPL-3.0-or-later -->
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <include>settingsdefaults.h</include>
+    <kcfgfile name="kalamusrc"/>
+
+    <group name="Appearance">
+        <entry name="TextFont" type="Font">
+            <label>Font for the text</label>
+            <default code="true">SettingsDefaults::textFont()</default>
+        </entry>
+        <entry name="CodeFont" type="Font">
+            <label>Font for code</label>
+            <default code="true">SettingsDefaults::codeFont()</default>
+        </entry>
+    </group>
+
+    <group name="View">
+        <entry name="LimitLineWidth" type="Bool">
+            <label>Keep lines at a comfortable reading width</label>
+            <default>true</default>
+        </entry>
+        <entry name="ReadableWidth" type="Int">
+            <label>Reading width, in characters (em)</label>
+            <default>66</default>
+            <min>30</min>
+            <max>200</max>
+        </entry>
+    </group>
+
+    <group name="Spelling">
+        <entry name="Enabled" key="Enabled" type="Bool">
+            <label>Check spelling as you type</label>
+            <default>true</default>
+        </entry>
+        <entry name="SpellingLanguage" key="Language" type="String">
+            <label>Spelling dictionary (empty: the system's)</label>
+            <default></default>
+        </entry>
+    </group>
+
+    <group name="Images">
+        <entry name="LoadRemoteImages" type="Bool">
+            <label>Load images from the web</label>
+            <default>true</default>
+        </entry>
+    </group>
+</kcfg>

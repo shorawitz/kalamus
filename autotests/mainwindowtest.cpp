@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "mainwindow.h"
+#include "kalamussettings.h"
 #include "markdowneditor.h"
+#include "settingsdialog.h"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QDialogButtonBox>
+#include <QFontComboBox>
+#include <QPushButton>
+#include <QSpinBox>
+#include <QTextBlock>
+#include <QTextLayout>
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
@@ -56,6 +65,8 @@ private Q_SLOTS:
         QStandardPaths::setTestModeEnabled(true); // a scratch config, not the user's
         KLocalizedString::setApplicationDomain("kalamus");
         KSharedConfig::openConfig()->deleteGroup(u"Recent Files"_s);
+        KalamusSettings::self()->setDefaults(); // a clean start, whatever an earlier run left
+        KalamusSettings::self()->save();
         const QString scratch = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
         QDir().mkpath(scratch);
         m_dir = std::make_unique<QTemporaryDir>(scratch + u"/kalamus-test-XXXXXX"_s);
@@ -124,6 +135,78 @@ private Q_SLOTS:
         }
         MainWindow again;
         QCOMPARE(recent(again), QStringList());
+    }
+
+    void settingsDialogAppliesToTheEditor()
+    {
+        MainWindow window;
+        window.openPath(write(u"s.md"_s, u"Text with `code` in it."_s));
+        auto *editor = window.findChild<MarkdownEditor *>();
+        QCOMPARE(editor->readableWidth(), MarkdownEditor::DefaultReadableWidth);
+
+        SettingsDialog dialog(&window);
+        QObject::connect(&dialog, &KConfigDialog::settingsChanged, &window, [&window] {
+            QMetaObject::invokeMethod(&window, "applySettings");
+        });
+        auto *width = dialog.findChild<QSpinBox *>(u"kcfg_ReadableWidth"_s);
+        auto *limit = dialog.findChild<QCheckBox *>(u"kcfg_LimitLineWidth"_s);
+        auto *spelling = dialog.findChild<QCheckBox *>(u"kcfg_Enabled"_s);
+        auto *remote = dialog.findChild<QCheckBox *>(u"kcfg_LoadRemoteImages"_s);
+        auto *codeFont = dialog.findChild<QFontComboBox *>(u"kcfg_CodeFont"_s);
+        QVERIFY(width && limit && spelling && remote && codeFont);
+        QVERIFY(limit->isChecked());
+
+        width->setValue(80);
+        spelling->setChecked(false);
+        remote->setChecked(false);
+        QFont mono(u"DejaVu Sans Mono"_s);
+        codeFont->setCurrentFont(mono);
+        QPushButton *apply = dialog.button(QDialogButtonBox::Apply);
+        QVERIFY(apply->isEnabled());
+        apply->click();
+
+        QCOMPARE(KalamusSettings::readableWidth(), 80);
+        QCOMPARE(editor->readableWidth(), 80);
+        QVERIFY(!editor->spellCheckingEnabled());
+        QVERIFY(!editor->loadRemoteImages());
+        // The Tools menu switch follows the dialog.
+        QVERIFY(!window.actionCollection()->action(u"tools_spelling_auto"_s)->isChecked());
+
+        // Code spans use the chosen family.
+        const auto formats = editor->document()->firstBlock().layout()->formats();
+        bool found = false;
+        for (const auto &range : formats) {
+            if (editor->document()->firstBlock().text().mid(range.start, range.length) == u"code"_s) {
+                found = range.format.fontFamilies().toStringList().contains(codeFont->currentFont().family());
+            }
+        }
+        QVERIFY(found);
+
+        // Defaults puts everything back.
+        dialog.button(QDialogButtonBox::RestoreDefaults)->click();
+        QCoreApplication::processEvents(); // the dialog updates its buttons on the next pass
+        apply->click();
+        QCOMPARE(editor->readableWidth(), MarkdownEditor::DefaultReadableWidth);
+        QVERIFY(editor->spellCheckingEnabled());
+        QVERIFY(editor->loadRemoteImages());
+    }
+
+    void menuSwitchesSaveSettings()
+    {
+        MainWindow window;
+        QAction *limit = window.actionCollection()->action(u"view_limit_line_width"_s);
+        QVERIFY(limit->isChecked());
+        limit->trigger();
+        QVERIFY(!KalamusSettings::limitLineWidth());
+        QVERIFY(!window.findChild<MarkdownEditor *>()->limitLineWidth());
+        limit->trigger();
+        QVERIFY(KalamusSettings::limitLineWidth());
+    }
+
+    void settingsActionExists()
+    {
+        MainWindow window;
+        QVERIFY(window.actionCollection()->action(u"options_configure"_s));
     }
 };
 

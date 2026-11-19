@@ -45,6 +45,10 @@ public:
     /// Forget everything (e.g. after files changed on disk).
     void clear();
 
+    /// Whether http(s) images are fetched; when off they show an explanation instead.
+    void setLoadRemote(bool load);
+    bool loadsRemote() const;
+
 Q_SIGNALS:
     void imageReady(const QUrl &url);
 
@@ -62,4 +66,5 @@ private:
     QString m_baseDirectory;
     QHash<QUrl, Entry> m_entries;
     QNetworkAccessManager *m_network = nullptr;
+    bool m_loadRemote = true;
 };

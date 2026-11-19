@@ -32,20 +32,31 @@ target_link_libraries(kalamuscore PUBLIC
     jkqtmathtext
 )
 
-add_executable(kalamus
-    main.cpp
+# The window, its panels and settings: shared by the app and its tests.
+add_library(kalamusui STATIC
     mainwindow.cpp mainwindow.h
     filetree.cpp filetree.h
-    kalamus.qrc
+    settingsdialog.cpp settingsdialog.h settingsdefaults.h
 )
-target_compile_definitions(kalamus PRIVATE KALAMUS_VERSION="${PROJECT_VERSION}")
-target_link_libraries(kalamus PRIVATE
+kconfig_add_kcfg_files(kalamusui kalamussettings.kcfgc)
+target_include_directories(kalamusui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(kalamusui PUBLIC
     kalamuscore
+    KF6::ColorScheme
     KF6::ConfigCore
+    KF6::ConfigGui
     KF6::ConfigWidgets
     KF6::CoreAddons
     KF6::WidgetsAddons
     KF6::XmlGui
 )
 
+add_executable(kalamus
+    main.cpp
+    kalamus.qrc
+)
+target_compile_definitions(kalamus PRIVATE KALAMUS_VERSION="${PROJECT_VERSION}")
+target_link_libraries(kalamus PRIVATE kalamusui)
+
+install(FILES kalamus.kcfg DESTINATION ${KDE_INSTALL_KCFGDIR})
 install(TARGETS kalamus ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

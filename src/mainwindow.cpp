@@ -8,6 +8,8 @@
 #include "filetree.h"
 #include "findbar.h"
 #include "outlinepanel.h"
+#include "kalamussettings.h"
+#include "settingsdialog.h"
 
 #include <QAction>
 #include <QDockWidget>
@@ -194,7 +196,7 @@ void MainWindow::setupActions()
         bool ok = false;
         const QString language = QInputDialog::getItem(this,
                                                        i18n("Code Block"),
-                                                       i18n("Language (sets the colours; type to search):"),
+                                                       i18n("Language (sets the colors; type to search):"),
                                                        choices,
                                                        qMax(0, int(choices.indexOf(last))),
                                                        true,
@@ -298,48 +300,41 @@ void MainWindow::setupActions()
         }
     });
 
-    QAction *limitWidth = add(u"view_limit_line_width"_s, i18n("&Limit Line Width"), u"format-justify-center"_s, {});
-    limitWidth->setCheckable(true);
-    limitWidth->setToolTip(i18n("Keep lines at a comfortable reading width instead of the full window width"));
-    const bool limit = KSharedConfig::openConfig()->group(u"View"_s).readEntry("LimitLineWidth", true);
-    limitWidth->setChecked(limit);
-    m_editor->setLimitLineWidth(limit);
-    connect(limitWidth, &QAction::toggled, this, [this](bool on) {
-        m_editor->setLimitLineWidth(on);
-        KConfigGroup group = KSharedConfig::openConfig()->group(u"View"_s);
-        group.writeEntry("LimitLineWidth", on);
+    // These menu switches and Settings > Configure Kalamus share KalamusSettings;
+    // applySettings() brings the editor and the switches in line with it.
+    m_limitWidth = add(u"view_limit_line_width"_s, i18n("&Limit Line Width"), u"format-justify-center"_s, {});
+    m_limitWidth->setCheckable(true);
+    m_limitWidth->setToolTip(i18n("Keep lines at a comfortable reading width instead of the full window width"));
+    connect(m_limitWidth, &QAction::toggled, this, [this](bool on) {
+        KalamusSettings::setLimitLineWidth(on);
+        KalamusSettings::self()->save();
+        applySettings();
     });
 
-    // Spelling: on/off and the dictionary, remembered between runs.
-    KConfigGroup spelling = KSharedConfig::openConfig()->group(u"Spelling"_s);
-    QAction *checkSpelling = add(u"tools_spelling_auto"_s, i18n("Check &Spelling"), u"tools-check-spelling"_s,
-                                 QKeySequence(Qt::SHIFT | Qt::Key_F7));
-    checkSpelling->setCheckable(true);
-    checkSpelling->setToolTip(i18n("Underline misspelled words as you type"));
-    m_editor->setSpellCheckingLanguage(spelling.readEntry("Language", QString()));
-    checkSpelling->setChecked(spelling.readEntry("Enabled", true));
-    m_editor->setSpellCheckingEnabled(checkSpelling->isChecked());
-    connect(checkSpelling, &QAction::toggled, this, [this](bool on) {
-        m_editor->setSpellCheckingEnabled(on);
-        KSharedConfig::openConfig()->group(u"Spelling"_s).writeEntry("Enabled", on);
+    m_checkSpelling = add(u"tools_spelling_auto"_s, i18n("Check &Spelling"), u"tools-check-spelling"_s, QKeySequence(Qt::SHIFT | Qt::Key_F7));
+    m_checkSpelling->setCheckable(true);
+    m_checkSpelling->setToolTip(i18n("Underline misspelled words as you type"));
+    connect(m_checkSpelling, &QAction::toggled, this, [this](bool on) {
+        KalamusSettings::setEnabled(on);
+        KalamusSettings::self()->save();
+        applySettings();
     });
 
-    auto *language = new KSelectAction(QIcon::fromTheme(u"globe"_s), i18n("Spelling &Language"), this);
-    ac->addAction(u"tools_spelling_language"_s, language);
+    m_spellingLanguage = new KSelectAction(QIcon::fromTheme(u"globe"_s), i18n("Spelling &Language"), this);
+    ac->addAction(u"tools_spelling_language"_s, m_spellingLanguage);
     const auto dictionaries = SpellChecker::availableLanguages(); // name -> code
     for (auto it = dictionaries.cbegin(); it != dictionaries.cend(); ++it) {
-        QAction *item = language->addAction(it.key());
-        item->setData(it.value());
-        if (it.value() == m_editor->spellCheckingLanguage()) {
-            language->setCurrentAction(item);
-        }
+        m_spellingLanguage->addAction(it.key())->setData(it.value());
     }
-    language->setEnabled(!dictionaries.isEmpty());
-    connect(language, &KSelectAction::actionTriggered, this, [this](QAction *item) {
-        const QString code = item->data().toString();
-        m_editor->setSpellCheckingLanguage(code);
-        KSharedConfig::openConfig()->group(u"Spelling"_s).writeEntry("Language", code);
+    m_spellingLanguage->setEnabled(!dictionaries.isEmpty());
+    connect(m_spellingLanguage, &KSelectAction::actionTriggered, this, [this](QAction *item) {
+        KalamusSettings::setSpellingLanguage(item->data().toString());
+        KalamusSettings::self()->save();
+        applySettings();
     });
+
+    KStandardAction::preferences(this, &MainWindow::showSettings, ac);
+    applySettings();
 
     QAction *toggleOutline = m_outlineDock->toggleViewAction();
     toggleOutline->setText(i18n("Show &Outline Panel"));
@@ -357,6 +352,39 @@ void MainWindow::setupActions()
     toggleFiles->setIcon(QIcon::fromTheme(u"sidebar-show-symbolic"_s));
     ac->addAction(u"view_toggle_files"_s, toggleFiles);
     KActionCollection::setDefaultShortcut(toggleFiles, QKeySequence(Qt::Key_F9));
+}
+
+void MainWindow::applySettings()
+{
+    m_editor->setFont(KalamusSettings::textFont());
+    m_editor->setCodeFont(KalamusSettings::codeFont());
+    m_editor->setReadableWidth(KalamusSettings::readableWidth());
+    m_editor->setLimitLineWidth(KalamusSettings::limitLineWidth());
+    m_editor->setSpellCheckingLanguage(KalamusSettings::spellingLanguage());
+    m_editor->setSpellCheckingEnabled(KalamusSettings::enabled());
+    m_editor->setLoadRemoteImages(KalamusSettings::loadRemoteImages());
+
+    // The menu switches show the same state (without feeding back into the settings).
+    const QSignalBlocker block1(m_limitWidth), block2(m_checkSpelling), block3(m_spellingLanguage);
+    m_limitWidth->setChecked(KalamusSettings::limitLineWidth());
+    m_checkSpelling->setChecked(KalamusSettings::enabled());
+    const QString language = m_editor->spellCheckingLanguage(); // "" resolves to the system's
+    for (QAction *item : m_spellingLanguage->actions()) {
+        if (item->data().toString() == language) {
+            m_spellingLanguage->setCurrentAction(item);
+        }
+    }
+}
+
+void MainWindow::showSettings()
+{
+    if (KConfigDialog::showDialog(u"settings"_s)) {
+        return; // already open: brought to the front
+    }
+    auto *dialog = new SettingsDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &KConfigDialog::settingsChanged, this, &MainWindow::applySettings);
+    dialog->show();
 }
 
 void MainWindow::refreshOutline()

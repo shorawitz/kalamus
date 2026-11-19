@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 David Christensen
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "imagecache.h"
 #include "markdowneditor.h"
 #include "markdownhighlighter.h"
 
@@ -48,6 +49,17 @@ private:
     QTemporaryDir m_dir;
 
 private Q_SLOTS:
+    void remoteImagesCanBeTurnedOff()
+    {
+        ImageCache cache;
+        cache.setLoadRemote(false);
+        const QUrl url(u"https://example.org/picture.png"_s);
+        QCOMPARE(cache.status(url), ImageCache::Status::Failed); // no download started
+        QVERIFY(cache.error(url).contains(u"turned off"_s));
+        // Local images still load.
+        QCOMPARE(cache.status(QUrl::fromLocalFile(m_dir.filePath(u"pics/small.png"_s))), ImageCache::Status::Ready);
+    }
+
     void initTestCase()
     {
         QVERIFY(m_dir.isValid());
