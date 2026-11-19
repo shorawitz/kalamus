@@ -25,6 +25,7 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KMessageBox>
+#include <KRecentFilesAction>
 #include <KSelectAction>
 #include <KSharedConfig>
 #include <KStandardAction>
@@ -113,6 +114,11 @@ void MainWindow::setupActions()
 
     KStandardAction::openNew(this, &MainWindow::newFile, ac);
     KStandardAction::open(this, &MainWindow::openFile, ac);
+    m_recentFiles = KStandardAction::openRecent(this, &MainWindow::openRecent, ac);
+    m_recentFiles->loadEntries(KSharedConfig::openConfig()->group(u"Recent Files"_s));
+    connect(m_recentFiles, &KRecentFilesAction::recentListCleared, this, [this] {
+        m_recentFiles->saveEntries(KSharedConfig::openConfig()->group(u"Recent Files"_s));
+    });
     KStandardAction::save(this, &MainWindow::save, ac);
     KStandardAction::saveAs(this, &MainWindow::saveAs, ac);
     KStandardAction::quit(this, &QWidget::close, ac);
@@ -407,6 +413,30 @@ void MainWindow::openFile()
     }
 }
 
+void MainWindow::openRecent(const QUrl &url)
+{
+    const QString path = url.toLocalFile();
+    if (!QFileInfo::exists(path)) {
+        KMessageBox::information(this,
+                                 i18n("“%1” is no longer there. It may have been moved, renamed or deleted, "
+                                      "so it has been removed from the recent files.",
+                                      path),
+                                 i18n("File Not Found"));
+        m_recentFiles->removeUrl(url);
+        m_recentFiles->saveEntries(KSharedConfig::openConfig()->group(u"Recent Files"_s));
+        return;
+    }
+    openPath(path);
+}
+
+void MainWindow::rememberRecent(const QString &path)
+{
+    m_recentFiles->addUrl(QUrl::fromLocalFile(QFileInfo(path).absoluteFilePath()));
+    KConfigGroup group = KSharedConfig::openConfig()->group(u"Recent Files"_s);
+    m_recentFiles->saveEntries(group);
+    group.sync(); // another Kalamus window, or a crash, still sees it
+}
+
 void MainWindow::openFolder()
 {
     const QString path = QFileDialog::getExistingDirectory(this, i18n("Open Folder"), m_tree->rootPath());
@@ -443,6 +473,7 @@ bool MainWindow::loadFile(const QString &path)
 
     KConfigGroup group = sessionGroup();
     group.writeEntry("LastFile", path);
+    rememberRecent(path);
     return true;
 }
 
@@ -466,6 +497,7 @@ bool MainWindow::writeFile(const QString &path)
 
     KConfigGroup group = sessionGroup();
     group.writeEntry("LastFile", path);
+    rememberRecent(path);
     return true;
 }
 

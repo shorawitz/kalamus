@@ -6,6 +6,7 @@
 #include <KXmlGuiWindow>
 
 class FileTree;
+class KRecentFilesAction;
 class FindBar;
 class OutlinePanel;
 class QTimer;
@@ -41,6 +42,9 @@ private:
     void exportTo(const QString &format);
     void updateCaption();
     QString baseDir() const;
+    void openRecent(const QUrl &url);
+    /// Put @p path at the top of File > Open Recent.
+    void rememberRecent(const QString &path);
     void refreshOutline();
 
     MarkdownEditor *m_editor;
@@ -51,4 +55,5 @@ private:
     QDockWidget *m_outlineDock;
     QTimer *m_outlineTimer;
     QString m_path;
+    KRecentFilesAction *m_recentFiles = nullptr;
 };
