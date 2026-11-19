@@ -5,8 +5,10 @@
 
 #include <KSyntaxHighlighting/AbstractHighlighter>
 #include <KSyntaxHighlighting/Definition>
+#include <KSyntaxHighlighting/Format>
 #include <KSyntaxHighlighting/Repository>
 #include <KSyntaxHighlighting/State>
+#include <KSyntaxHighlighting/Theme>
 
 #include <QHash>
 #include <QList>
@@ -23,6 +25,13 @@ public:
         int start = 0;
         int length = 0;
         QTextCharFormat format;
+    };
+
+    /// A span with its theme-independent format, for exports that style both themes.
+    struct FormatSpan {
+        int start = 0;
+        int length = 0;
+        KSyntaxHighlighting::Format format;
     };
 
     static CodeHighlighter &instance();
@@ -43,6 +52,15 @@ public:
     KSyntaxHighlighting::State
     highlight(const QString &text, const KSyntaxHighlighting::State &state, const KSyntaxHighlighting::Definition &definition, QList<Span> *spans);
 
+    /// Like highlight(), but keeps the formats themselves (every span, default style included).
+    KSyntaxHighlighting::State highlightFormats(const QString &text,
+                                                const KSyntaxHighlighting::State &state,
+                                                const KSyntaxHighlighting::Definition &definition,
+                                                QList<FormatSpan> *spans);
+
+    /// The Breeze light or dark theme (whichever the editor uses right now).
+    KSyntaxHighlighting::Theme defaultTheme(bool dark) const;
+
 protected:
     void applyFormat(int offset, int length, const KSyntaxHighlighting::Format &format) override;
 
@@ -52,5 +70,6 @@ private:
     KSyntaxHighlighting::Repository m_repository;
     QHash<QString, KSyntaxHighlighting::Definition> m_definitions;
     QList<Span> *m_spans = nullptr;
+    QList<FormatSpan> *m_formatSpans = nullptr;
     bool m_dark = false;
 };

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "exporter.h"
+#include "codehighlighter.h"
 #include "mathrenderer.h"
 
 #include <QDir>
+#include <QMap>
 #include <QFile>
 #include <QImageReader>
 #include <QGuiApplication>
@@ -225,6 +227,116 @@ qreal screenPixelsPerPoint()
     const QScreen *screen = QGuiApplication::primaryScreen();
     return (screen ? screen->logicalDotsPerInchY() : 96.0) / 72.0;
 }
+
+// <pre lang="cpp"><code>...</code></pre>, as cmark writes a fenced code block.
+const QRegularExpression kCodeBlock(uR"re(<pre(?: lang="([^"]*)")?><code>([\s\S]*?)</code></pre>)re"_s);
+
+QString unescapeHtml(QString text)
+{
+    // cmark escapes exactly these four.
+    return text.replace(u"&lt;"_s, u"<"_s).replace(u"&gt;"_s, u">"_s).replace(u"&quot;"_s, u"\""_s).replace(u"&amp;"_s, u"&"_s);
+}
+
+QString cssFor(const KSyntaxHighlighting::Format &format, const KSyntaxHighlighting::Theme &theme)
+{
+    QString css;
+    if (format.hasTextColor(theme)) {
+        css += u"color:"_s + format.textColor(theme).name() + u';';
+    }
+    if (format.hasBackgroundColor(theme)) {
+        css += u"background-color:"_s + format.backgroundColor(theme).name() + u';';
+    }
+    if (format.isBold(theme)) {
+        css += u"font-weight:bold;"_s;
+    }
+    if (format.isItalic(theme)) {
+        css += u"font-style:italic;"_s;
+    }
+    if (format.isUnderline(theme) || format.isStrikeThrough(theme)) {
+        css += u"text-decoration:"_s + (format.isUnderline(theme) ? u"underline "_s : QString())
+            + (format.isStrikeThrough(theme) ? u"line-through"_s : QString()) + u';';
+    }
+    return css;
+}
+
+/**
+ * Colours the fenced code blocks in cmark's HTML with Kate's syntax definitions.
+ * With @p styleSheet, spans get classes and the style sheet gets Breeze light colours plus
+ * Breeze dark ones for readers in dark mode. Without it (PDF, where Qt's rich text has
+ * no media queries), the light colours go inline.
+ */
+QString colorCodeBlocks(const QString &html, QString *styleSheet)
+{
+    auto &highlighter = CodeHighlighter::instance();
+    const auto light = highlighter.defaultTheme(false);
+    const auto dark = highlighter.defaultTheme(true);
+    QMap<int, KSyntaxHighlighting::Format> used;
+
+    QString out;
+    qsizetype last = 0;
+    for (auto it = kCodeBlock.globalMatch(html); it.hasNext();) {
+        const auto m = it.next();
+        const QString code = unescapeHtml(m.captured(2));
+        QString language = m.captured(1);
+        if (language.isEmpty()) {
+            language = CodeHighlighter::languageFromShebang(code.section(u'\n', 0, 0));
+        }
+        const auto definition = highlighter.definitionFor(language);
+        if (!definition.isValid()) {
+            continue; // left as cmark wrote it
+        }
+
+        QString colored;
+        KSyntaxHighlighting::State state;
+        const QStringList lines = code.split(u'\n');
+        for (qsizetype n = 0; n < lines.size(); ++n) {
+            const QString &line = lines.at(n);
+            QList<CodeHighlighter::FormatSpan> spans;
+            state = highlighter.highlightFormats(line, state, definition, &spans);
+            int pos = 0;
+            for (const auto &span : std::as_const(spans)) {
+                if (span.start < pos) {
+                    continue;
+                }
+                colored += line.mid(pos, span.start - pos).toHtmlEscaped();
+                const QString text = line.mid(span.start, span.length).toHtmlEscaped();
+                pos = span.start + span.length;
+                if (styleSheet) {
+                    if (span.format.isDefaultTextStyle(light) && span.format.isDefaultTextStyle(dark)) {
+                        colored += text;
+                        continue;
+                    }
+                    used.insert(span.format.id(), span.format);
+                    colored += u"<span class=\"hl%1\">"_s.arg(span.format.id()) + text + u"</span>"_s;
+                } else {
+                    const QString css = span.format.isDefaultTextStyle(light) ? QString() : cssFor(span.format, light);
+                    colored += css.isEmpty() ? text : u"<span style=\""_s + css + u"\">"_s + text + u"</span>"_s;
+                }
+            }
+            colored += line.mid(pos).toHtmlEscaped();
+            if (n + 1 < lines.size()) {
+                colored += u'\n';
+            }
+        }
+
+        out += QStringView(html).mid(last, m.capturedStart(2) - last);
+        out += colored;
+        last = m.capturedEnd(2);
+    }
+    out += QStringView(html).mid(last);
+
+    if (styleSheet) {
+        QString lightCss;
+        QString darkCss;
+        for (auto it = used.cbegin(); it != used.cend(); ++it) {
+            const QString selector = u".hl%1{"_s.arg(it.key());
+            lightCss += selector + cssFor(*it, light) + u"}\n"_s;
+            darkCss += selector + cssFor(*it, dark) + u"}\n"_s;
+        }
+        *styleSheet = used.isEmpty() ? QString() : lightCss + u"@media (prefers-color-scheme: dark) {\n"_s + darkCss + u"}\n"_s;
+    }
+    return out;
+}
 } // namespace
 
 QString Exporter::toHtmlFragment(const QString &markdown)
@@ -265,7 +377,8 @@ QString Exporter::toHtmlDocument(const QString &markdown, const QString &title)
   onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
 )"_s;
     QList<MathItem> math;
-    const QString body = restoreMath(toHtmlFragment(protectMath(markdown, &math)), math, [&](int i, bool block) -> QString {
+    QString codeCss;
+    const QString body = restoreMath(colorCodeBlocks(toHtmlFragment(protectMath(markdown, &math)), &codeCss), math, [&](int i, bool block) -> QString {
         const MathItem &item = math.at(i);
         const QString tex = item.latex.toHtmlEscaped();
         if (block) {
@@ -273,6 +386,9 @@ QString Exporter::toHtmlDocument(const QString &markdown, const QString &title)
         }
         return item.display ? u"<span class=\"math\">$$"_s + tex + u"$$</span>"_s : u"<span class=\"math\">$"_s + tex + u"$</span>"_s;
     });
+    if (!codeCss.isEmpty()) {
+        page += u"<style>\n"_s + codeCss + u"</style>\n"_s;
+    }
     page += u"</head>\n<body>\n"_s + body + u"</body>\n</html>\n"_s;
     return page;
 }
@@ -302,7 +418,7 @@ bool Exporter::exportPdf(const QString &markdown, const QString &baseDir, const 
     // Formulas become images, rendered at 4x for crisp print.
     QList<MathItem> math;
     const qreal pixelSize = doc.defaultFont().pointSizeF() * screenPixelsPerPoint();
-    const QString html = restoreMath(toHtmlFragment(protectMath(markdown, &math)), math, [&](int i, bool block) -> QString {
+    const QString html = restoreMath(colorCodeBlocks(toHtmlFragment(protectMath(markdown, &math)), nullptr), math, [&](int i, bool block) -> QString {
         const MathItem &item = math.at(i);
         const auto metrics = MathRenderer::instance().measure(item.latex, item.display, pixelSize);
         if (!metrics.ok) {

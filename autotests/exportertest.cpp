@@ -5,6 +5,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -38,6 +39,30 @@ private Q_SLOTS:
         QVERIFY(html.contains(u"<code>$code$</code>"_s));
         QVERIFY(html.contains(u"<span class=\"math\">$a$</span> and <span class=\"math\">$b$</span>"_s));
         QVERIFY(!html.contains(u"KALAMUSMATH"_s));
+    }
+
+    void codeBlocksAreColored()
+    {
+        const QString html = Exporter::toHtmlDocument(u"```cpp\nif (a < b && c) { return \"x\"; }\n```\n"_s, u"t"_s);
+        QVERIFY(html.contains(u"<pre lang=\"cpp\"><code>"_s));
+        QVERIFY(html.contains(u"<span class=\"hl"_s));
+        QVERIFY(html.contains(u"@media (prefers-color-scheme: dark)"_s));
+        // The code reads the same once the colour spans are taken out.
+        QString text = html.section(u"<code>"_s, 1).section(u"</code>"_s, 0, 0);
+        text.remove(QRegularExpression(u"<[^>]+>"_s));
+        QCOMPARE(text, u"if (a &lt; b &amp;&amp; c) { return &quot;x&quot;; }\n"_s);
+    }
+
+    void unknownLanguagesStayPlain()
+    {
+        const QString md = u"```nosuchlanguage\nx = 1\n```\n\n```\nplain\n```\n"_s;
+        QCOMPARE(Exporter::toHtmlDocument(md, u"t"_s).count(u"<span class=\"hl"_s), 0);
+    }
+
+    void shebangPicksTheLanguage()
+    {
+        const QString html = Exporter::toHtmlDocument(u"```\n#!/usr/bin/env python3\nimport os\n```\n"_s, u"t"_s);
+        QVERIFY(html.contains(u"<span class=\"hl"_s));
     }
 
     void pdfWithMath()

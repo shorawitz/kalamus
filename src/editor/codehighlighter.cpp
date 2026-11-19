@@ -86,8 +86,31 @@ KSyntaxHighlighting::State CodeHighlighter::highlight(const QString &text,
     return next;
 }
 
+KSyntaxHighlighting::State CodeHighlighter::highlightFormats(const QString &text,
+                                                             const KSyntaxHighlighting::State &state,
+                                                             const KSyntaxHighlighting::Definition &definition,
+                                                             QList<FormatSpan> *spans)
+{
+    if (definition != this->definition()) {
+        setDefinition(definition);
+    }
+    m_formatSpans = spans;
+    const auto next = highlightLine(text, state);
+    m_formatSpans = nullptr;
+    return next;
+}
+
+KSyntaxHighlighting::Theme CodeHighlighter::defaultTheme(bool dark) const
+{
+    return m_repository.defaultTheme(dark ? KSyntaxHighlighting::Repository::DarkTheme : KSyntaxHighlighting::Repository::LightTheme);
+}
+
 void CodeHighlighter::applyFormat(int offset, int length, const KSyntaxHighlighting::Format &format)
 {
+    if (m_formatSpans && length > 0) {
+        m_formatSpans->append({offset, length, format});
+        return;
+    }
     if (!m_spans || length <= 0 || format.isDefaultTextStyle(theme())) {
         return;
     }

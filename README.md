@@ -68,7 +68,7 @@ only its LaTeX math renderer is compiled in.
 ### v1
 - [x] Live-formatted editing (headings, emphasis, code, links, lists, tasks, quotes)
 - [x] Files panel (folder tree, Markdown files only)
-- [x] Export: HTML, PDF (built in); Word, ODT (via pandoc)
+- [x] Export: HTML, PDF (built in, code blocks in color); Word, ODT (via pandoc)
 - [x] Tables drawn as a grid when the cursor is outside; aligned source with
       spreadsheet-style keys inside; Table menu and right-click actions
 - [x] Math: `$…$` and `$$…$$` drawn as formulas (JKQTMathText) when the cursor is
