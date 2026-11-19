@@ -3,4 +3,7 @@
     <qresource prefix="/kxmlgui5/kalamus">
         <file>kalamusui.rc</file>
     </qresource>
+    <qresource prefix="/icons">
+        <file alias="kalamus.svg">../icons/sc-apps-io.github.shorawitz.Kalamus.svg</file>
+    </qresource>
 </RCC>

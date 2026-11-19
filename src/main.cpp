@@ -26,7 +26,8 @@ int main(int argc, char **argv)
                      i18n("© 2026 David Christensen"));
     about.setDesktopFileName(u"io.github.shorawitz.Kalamus"_s);
     KAboutData::setApplicationData(about);
-    QApplication::setWindowIcon(QIcon::fromTheme(u"text-markdown"_s));
+    // The installed theme icon wins; the built-in copy covers running from the build folder.
+    QApplication::setWindowIcon(QIcon::fromTheme(u"io.github.shorawitz.Kalamus"_s, QIcon(u":/icons/kalamus.svg"_s)));
 
     QCommandLineParser parser;
     about.setupCommandLine(&parser);

@@ -24,7 +24,8 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build   # tests
 ./build/bin/kalamus [file-or-folder]
 
 # Install for your user (app menu entry + `kalamus` on PATH); re-run after rebuilding
-cmake --install build --prefix ~/.local
+cmake -B build -DCMAKE_INSTALL_PREFIX=$HOME/.local   # once
+cmake --install build
 ```
 
 The first configure downloads JKQtPlotter (pinned commit, see `3rdparty/CMakeLists.txt`);

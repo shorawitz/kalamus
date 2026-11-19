@@ -40,4 +40,7 @@ endif()
 
 install(FILES io.github.shorawitz.Kalamus.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 
+include(ECMInstallIcons)
+ecm_install_icons(ICONS icons/sc-apps-io.github.shorawitz.Kalamus.svg DESTINATION ${KDE_INSTALL_ICONDIR})
+
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)
