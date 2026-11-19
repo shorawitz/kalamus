@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
-<gui name="kalamus" version="7">
+<gui name="kalamus" version="8">
     <MenuBar>
         <Menu name="file">
             <Action name="file_open_folder" append="open_merge"/>
@@ -58,12 +58,20 @@
             <Action name="tools_spelling_language"/>
         </Menu>
     </MenuBar>
-    <ToolBar name="mainToolBar">
+    <ToolBar name="mainToolBar" noMerge="1">
         <text>Main Toolbar</text>
         <Action name="file_new"/>
         <Action name="file_open"/>
         <Action name="file_open_folder"/>
         <Action name="file_save"/>
+        <Action name="file_save_as"/>
+        <Separator/>
+        <Action name="edit_undo"/>
+        <Action name="edit_redo"/>
+        <Separator/>
+        <Action name="edit_cut"/>
+        <Action name="edit_copy"/>
+        <Action name="edit_paste"/>
         <Separator/>
         <Action name="format_bold"/>
         <Action name="format_italic"/>

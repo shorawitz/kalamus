@@ -84,7 +84,7 @@ only its LaTeX math renderer is compiled in.
   current section is highlighted
 - [x] Find and replace: live search, match count, match case / whole words /
   regex (with \1 in replacements), Replace All as one undo step
-- [x] Recent files (File → Open Recent; moved or deleted files drop off)
+- [x] Recent files (File → Open Recent; moved or deleted files drop off), also listed in Plasma's Recent Files
 - [x] Paste images into an `assets/` folder; drop image files (copied into assets/
       when they live outside the document's folder); Insert Image
 - [x] Settings (Settings → Configure Kalamus): color scheme, text and code fonts,

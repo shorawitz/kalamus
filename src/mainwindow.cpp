@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "mainwindow.h"
+#include "recentdocuments.h"
 #include "editor/codehighlighter.h"
 #include "editor/markdowneditor.h"
 #include "exporter.h"
@@ -459,6 +460,7 @@ void MainWindow::openRecent(const QUrl &url)
 
 void MainWindow::rememberRecent(const QString &path)
 {
+    RecentDocuments::add(path); // Plasma's Recent Files too
     m_recentFiles->addUrl(QUrl::fromLocalFile(QFileInfo(path).absoluteFilePath()));
     KConfigGroup group = KSharedConfig::openConfig()->group(u"Recent Files"_s);
     m_recentFiles->saveEntries(group);

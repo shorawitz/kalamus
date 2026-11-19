@@ -20,6 +20,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <KToolBar>
 
 #include <KActionCollection>
 #include <KLocalizedString>
@@ -63,6 +64,7 @@ private Q_SLOTS:
     void initTestCase()
     {
         QStandardPaths::setTestModeEnabled(true); // a scratch config, not the user's
+        QCoreApplication::setApplicationName(u"kalamus"_s); // so the window finds kalamusui.rc
         KLocalizedString::setApplicationDomain("kalamus");
         KSharedConfig::openConfig()->deleteGroup(u"Recent Files"_s);
         KalamusSettings::self()->setDefaults(); // a clean start, whatever an earlier run left
@@ -207,6 +209,18 @@ private Q_SLOTS:
     {
         MainWindow window;
         QVERIFY(window.actionCollection()->action(u"options_configure"_s));
+    }
+
+    void toolbarOrder()
+    {
+        MainWindow window;
+        QStringList names;
+        for (QAction *action : window.toolBar(u"mainToolBar"_s)->actions()) {
+            names.append(action->isSeparator() ? u"|"_s : action->objectName());
+        }
+        QCOMPARE(names.join(u' '),
+                 u"file_new file_open file_open_folder file_save file_save_as | edit_undo edit_redo | edit_cut edit_copy edit_paste | "
+                 "format_bold format_italic format_strikethrough format_code format_code_block format_link insert_image table_insert"_s);
     }
 };
 

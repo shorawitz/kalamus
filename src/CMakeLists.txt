@@ -37,11 +37,13 @@ add_library(kalamusui STATIC
     mainwindow.cpp mainwindow.h
     filetree.cpp filetree.h
     settingsdialog.cpp settingsdialog.h settingsdefaults.h
+    recentdocuments.cpp recentdocuments.h
 )
 kconfig_add_kcfg_files(kalamusui kalamussettings.kcfgc)
 target_include_directories(kalamusui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(kalamusui PUBLIC
     kalamuscore
+    Qt6::DBus
     KF6::ColorScheme
     KF6::ConfigCore
     KF6::ConfigGui
