@@ -48,7 +48,9 @@ int main(int argc, char **argv)
 
     if (parser.isSet(grabOption)) {
         const QString target = parser.value(grabOption);
-        window->resize(1100, 760); // the off-screen platform has no saved geometry
+        // The off-screen platform has no saved geometry; KALAMUS_GRAB_SIZE=WxH overrides.
+        const QStringList size = qEnvironmentVariable("KALAMUS_GRAB_SIZE", u"1100x760"_s).split(u'x');
+        window->resize(size.value(0).toInt(), size.value(1).toInt());
         QTimer::singleShot(1000, window, [window, target] {
             window->grab().save(target);
             QApplication::quit();

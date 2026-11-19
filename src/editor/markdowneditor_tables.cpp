@@ -19,8 +19,6 @@ using namespace Qt::StringLiterals;
 
 namespace
 {
-constexpr qreal kCellPadding = 10;
-constexpr qreal kMinColumnWidth = 48;
 
 bool isTableBody(const QTextBlock &block)
 {
@@ -296,25 +294,6 @@ void MarkdownEditor::formatTable()
 // ---------------------------------------------------------------------------
 // Drawing
 
-QTextDocument *MarkdownEditor::cellDocument(const QString &text, bool header) const
-{
-    const QString key = (header ? u"h:"_s : u"b:"_s) + text;
-    if (const auto it = m_cellCache.constFind(key); it != m_cellCache.cend()) {
-        return it->get();
-    }
-    if (m_cellCache.size() > 2000) {
-        m_cellCache.clear();
-    }
-    auto doc = std::make_shared<QTextDocument>();
-    QFont f = font();
-    f.setBold(header);
-    doc->setDefaultFont(f);
-    doc->setDocumentMargin(0);
-    doc->setMarkdown(text, QTextDocument::MarkdownDialectGitHub);
-    m_cellCache.insert(key, doc);
-    return doc.get();
-}
-
 MarkdownEditor::TableGrid MarkdownEditor::layoutTable(const QTextBlock &first) const
 {
     TableGrid grid;
@@ -330,51 +309,38 @@ MarkdownEditor::TableGrid MarkdownEditor::layoutTable(const QTextBlock &first) c
         }
     }
     const auto table = MarkdownTable::parse(lines);
-    int columns = table ? table->columnCount() : 0;
-    for (const auto &row : std::as_const(grid.cells)) {
-        columns = qMax(columns, int(row.size()));
+    if (!table) {
+        return {};
     }
-    for (int c = 0; c < columns; ++c) {
-        grid.align.append(table ? table->alignment(c) : MarkdownTable::Align::None);
-    }
-
-    // Column widths from the rendered cell contents.
-    QList<qreal> widths(columns, kMinColumnWidth);
-    for (int r = 0; r < grid.cells.size(); ++r) {
-        for (int c = 0; c < grid.cells[r].size(); ++c) {
-            QTextDocument *doc = cellDocument(grid.cells[r][c].text, r == 0);
-            doc->setTextWidth(-1);
-            widths[c] = qMax(widths[c], doc->idealWidth() + 2 * kCellPadding);
-        }
-    }
-
-    const QRectF firstRect = layout->blockBoundingRect(first).translated(offset);
-    const qreal left = firstRect.left();
-    const qreal available = viewport()->width() - document()->documentMargin() - left;
-    qreal total = 0;
-    for (qreal w : std::as_const(widths)) {
-        total += w;
-    }
-    if (total > available && total > 0 && available > 0) {
-        const qreal scale = available / total;
-        for (qreal &w : widths) {
-            w *= scale;
-        }
-        total = available;
-    }
+    // Same engine and width as the highlighter, so the rows match the source lines.
+    const auto sizes = m_tableLayout->compute(*table, m_highlighter->tableWidth());
     qreal x = 0;
-    for (qreal w : std::as_const(widths)) {
+    for (int c = 0; c < table->columnCount(); ++c) {
+        grid.align.append(table->alignment(c));
         grid.columnX.append(x);
-        grid.columnWidth.append(w);
-        x += w;
+        grid.columnWidth.append(sizes.columnWidths.at(c));
+        x += sizes.columnWidths.at(c);
+    }
+    grid.texts.reserve(table->rowCount());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        QStringList row;
+        for (int c = 0; c < table->columnCount(); ++c) {
+            row.append(table->cell(r, c));
+        }
+        grid.texts.append(row);
     }
 
-    for (const QTextBlock &row : std::as_const(grid.rows)) {
-        const QRectF r = layout->blockBoundingRect(row).translated(offset);
-        grid.rowRects.append(QRectF(left, r.top(), total, r.height()));
+    // A row reaches down to where the next row starts: Qt reports line heights without
+    // the extra line spacing, which it adds when placing the next line.
+    const qreal left = layout->blockBoundingRect(first).translated(offset).left();
+    for (int r = 0; r < grid.rows.size(); ++r) {
+        const qreal top = layout->blockBoundingRect(grid.rows.at(r)).translated(offset).top();
+        const qreal bottom = r + 1 < grid.rows.size() ? layout->blockBoundingRect(grid.rows.at(r + 1)).translated(offset).top()
+                                                      : top + sizes.rowHeights.value(r);
+        grid.rowRects.append(QRectF(left, top, sizes.width, bottom - top));
     }
     if (!grid.rowRects.isEmpty()) {
-        grid.rect = QRectF(left, grid.rowRects.first().top(), total, grid.rowRects.last().bottom() - grid.rowRects.first().top());
+        grid.rect = QRectF(left, grid.rowRects.first().top(), sizes.width, grid.rowRects.last().bottom() - grid.rowRects.first().top());
     }
     return grid;
 }
@@ -430,27 +396,21 @@ void MarkdownEditor::paintTable(QPainter &painter, const TableGrid &grid) const
     }
     painter.fillRect(header, pal.color(QPalette::AlternateBase));
 
-    // Cell contents.
+    // Cell contents, wrapped to the column width and top-aligned.
     QAbstractTextDocumentLayout::PaintContext context;
     context.palette = pal;
-    for (int r = 0; r < grid.rows.size(); ++r) {
+    for (int r = 0; r < grid.rows.size() && r < grid.texts.size(); ++r) {
         const QRectF rowRect = grid.rowRects.at(r);
-        for (int c = 0; c < grid.columnX.size() && c < grid.cells.at(r).size(); ++c) {
-            const QString text = grid.cells.at(r).at(c).text;
+        for (int c = 0; c < grid.columnX.size(); ++c) {
+            const QString text = grid.texts.at(r).value(c);
             if (text.isEmpty()) {
                 continue;
             }
             const QRectF cell(grid.rect.left() + grid.columnX.at(c), rowRect.top(), grid.columnWidth.at(c), rowRect.height());
-            QTextDocument *doc = cellDocument(text, r == 0);
-            QTextOption option = doc->defaultTextOption();
-            option.setAlignment(toQt(grid.align.value(c)));
-            option.setWrapMode(QTextOption::NoWrap);
-            doc->setDefaultTextOption(option);
-            doc->setTextWidth(qMax<qreal>(1, cell.width() - 2 * kCellPadding));
-
+            QTextDocument *doc = m_tableLayout->cell(text, r == 0, cell.width() - 2 * TableLayout::Padding, toQt(grid.align.value(c)));
             painter.save();
-            painter.setClipRect(cell.adjusted(kCellPadding / 2, 0, -kCellPadding / 2, 0), Qt::IntersectClip);
-            painter.translate(cell.left() + kCellPadding, cell.top() + (cell.height() - doc->size().height()) / 2);
+            painter.setClipRect(cell, Qt::IntersectClip);
+            painter.translate(cell.left() + TableLayout::Padding, cell.top() + TableLayout::VerticalPadding);
             doc->documentLayout()->draw(&painter, context);
             painter.restore();
         }

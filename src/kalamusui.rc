@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE gui SYSTEM "kpartgui.dtd">
-<gui name="kalamus" version="2">
+<gui name="kalamus" version="3">
     <MenuBar>
         <Menu name="file">
             <Action name="file_open_folder" append="open_merge"/>
@@ -47,6 +47,7 @@
         </Menu>
         <Menu name="view">
             <Action name="view_toggle_files"/>
+            <Action name="view_limit_line_width"/>
         </Menu>
     </MenuBar>
     <ToolBar name="mainToolBar">

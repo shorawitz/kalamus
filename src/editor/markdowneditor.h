@@ -4,6 +4,7 @@
 #pragma once
 
 #include "markdowntable.h"
+#include "tablelayout.h"
 
 #include <QHash>
 #include <QTextBlock>
@@ -34,6 +35,10 @@ public:
     QString markdown() const;
 
     bool isInTable() const;
+
+    /// Keep text at a comfortable reading width (centered), or use the full window width.
+    void setLimitLineWidth(bool limit);
+    bool limitLineWidth() const;
     /// Extra entries for the right-click menu while the cursor is in a table.
     void setTableActions(const QList<QAction *> &actions);
 
@@ -63,6 +68,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
     void changeEvent(QEvent *event) override;
 
 private:
@@ -77,7 +83,8 @@ private:
     /// A table drawn as a grid, in viewport coordinates.
     struct TableGrid {
         QList<QTextBlock> rows; ///< header and body rows (no delimiter)
-        QList<QList<MarkdownTable::Cell>> cells;
+        QList<QList<MarkdownTable::Cell>> cells; ///< source positions, for clicks
+        QList<QStringList> texts; ///< cell contents (header first)
         QList<MarkdownTable::Align> align;
         QList<qreal> columnX; ///< left edge of each column
         QList<qreal> columnWidth;
@@ -90,6 +97,8 @@ private:
     bool indentListItem(bool outdent);
     void applyLineSpacing();
     void updateMargins();
+    /// Re-style every table (after the width tables may use has changed).
+    void relayoutTables();
 
     // Tables: editing
     std::optional<TableContext> tableAtCursor() const;
@@ -102,7 +111,6 @@ private:
     // Tables: drawing
     QList<TableGrid> visibleTables() const;
     TableGrid layoutTable(const QTextBlock &first) const;
-    QTextDocument *cellDocument(const QString &text, bool header) const;
     void paintTable(QPainter &painter, const TableGrid &grid) const;
     bool tableHitTest(const QPoint &pos, QTextCursor *cursor) const;
 
@@ -112,5 +120,7 @@ private:
     MarkdownHighlighter *m_highlighter = nullptr;
     QList<QAction *> m_tableActions;
     bool m_inTable = false;
-    mutable QHash<QString, std::shared_ptr<QTextDocument>> m_cellCache;
+    std::unique_ptr<TableLayout> m_tableLayout;
+    bool m_limitLineWidth = true;
+    bool m_relayoutPending = false;
 };

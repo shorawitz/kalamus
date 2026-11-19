@@ -5,6 +5,7 @@
 #include "markdownhighlighter.h"
 
 #include <QFontDatabase>
+#include <QFontInfo>
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QRegularExpression>
@@ -66,7 +67,10 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     setFont(font);
     document()->setDocumentMargin(32);
 
+    m_tableLayout = std::make_unique<TableLayout>();
+    m_tableLayout->setFont(font);
     m_highlighter = new MarkdownHighlighter(document());
+    m_highlighter->setTableLayout(m_tableLayout.get());
 
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] {
         m_highlighter->setActiveBlock(textCursor().block());
@@ -323,16 +327,69 @@ void MarkdownEditor::changeEvent(QEvent *event)
     QTextEdit::changeEvent(event);
     // Palette/font changes also arrive from the constructor, before the highlighter exists.
     if (m_highlighter && (event->type() == QEvent::PaletteChange || event->type() == QEvent::FontChange)) {
-        m_cellCache.clear();
+        m_tableLayout->setFont(font());
         m_highlighter->refreshStyles();
         updateMargins();
     }
 }
 
+void MarkdownEditor::setLimitLineWidth(bool limit)
+{
+    if (limit != m_limitLineWidth) {
+        m_limitLineWidth = limit;
+        updateMargins();
+    }
+}
+
+bool MarkdownEditor::limitLineWidth() const
+{
+    return m_limitLineWidth;
+}
+
 void MarkdownEditor::updateMargins()
 {
-    // Keep lines at a comfortable reading width and center the text, like a page.
-    const int maxWidth = qRound(QFontMetricsF(font()).averageCharWidth() * 90);
-    const int side = qMax(0, (width() - maxWidth) / 2);
+    // Readable width: about 52em of text (Typora's default is similar), centered like a page.
+    // Otherwise the text uses the whole window.
+    int side = 0;
+    if (m_limitLineWidth) {
+        const qreal em = QFontInfo(font()).pixelSize();
+        const int maxWidth = qRound(em * 52 + 2 * document()->documentMargin());
+        side = qMax(0, (width() - maxWidth) / 2);
+    }
     setViewportMargins(side, 0, side, 0);
+    relayoutTables();
+}
+
+bool MarkdownEditor::viewportEvent(QEvent *event)
+{
+    // The viewport also changes width when the vertical scroll bar appears or goes away.
+    if (event->type() == QEvent::Resize) {
+        relayoutTables();
+    }
+    return QTextEdit::viewportEvent(event);
+}
+
+void MarkdownEditor::relayoutTables()
+{
+    if (!m_highlighter || m_relayoutPending) {
+        return;
+    }
+    // Coalesce the many resize events of a window drag into one re-layout.
+    m_relayoutPending = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_relayoutPending = false;
+            const qreal available = viewport()->width() - 2 * document()->documentMargin();
+            if (!m_highlighter->setTableWidth(available)) {
+                return;
+            }
+            for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
+                if (MarkdownHighlighter::isTableState(block.userState())) {
+                    m_highlighter->rehighlightBlock(block);
+                }
+            }
+            viewport()->update();
+        },
+        Qt::QueuedConnection);
 }

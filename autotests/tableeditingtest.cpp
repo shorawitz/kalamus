@@ -4,6 +4,7 @@
 #include "markdowneditor.h"
 #include "markdownhighlighter.h"
 
+#include <QAbstractTextDocumentLayout>
 #include <QTest>
 #include <QTextBlock>
 
@@ -27,6 +28,24 @@ private:
     const QString m_doc = u"Intro\n\n|a|b|\n|-|-|\n|1|2|\n\nAfter\n"_s;
 
 private Q_SLOTS:
+    void rowsFitWrappedText()
+    {
+        // A long cell wraps; its row must be as tall as the wrapped text, and the grid row
+        // must span from this row's top to the next row's top (Qt adds line spacing there).
+        MarkdownEditor editor;
+        editor.resize(700, 600);
+        editor.show();
+        editor.loadMarkdown(u"|a|b|\n|-|-|\n|x|one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty|\n|y|z|\n\nAfter"_s);
+        placeCursor(editor, u"After"_s);
+        QCoreApplication::processEvents();
+        auto *layout = editor.document()->documentLayout();
+        const qreal top = layout->blockBoundingRect(editor.document()->findBlockByNumber(2)).top();
+        const qreal next = layout->blockBoundingRect(editor.document()->findBlockByNumber(3)).top();
+        const qreal oneLine = next - top;
+        const qreal shortRow = layout->blockBoundingRect(editor.document()->findBlockByNumber(4)).top() - next;
+        QVERIFY2(oneLine > shortRow * 1.6, qPrintable(u"wrapped row %1, short row %2"_s.arg(oneLine).arg(shortRow)));
+    }
+
     void blockStates()
     {
         MarkdownEditor editor;

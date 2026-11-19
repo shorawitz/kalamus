@@ -187,6 +187,18 @@ void MainWindow::setupActions()
         }
     });
 
+    QAction *limitWidth = add(u"view_limit_line_width"_s, i18n("&Limit Line Width"), u"format-justify-center"_s, {});
+    limitWidth->setCheckable(true);
+    limitWidth->setToolTip(i18n("Keep lines at a comfortable reading width instead of the full window width"));
+    const bool limit = KSharedConfig::openConfig()->group(u"View"_s).readEntry("LimitLineWidth", true);
+    limitWidth->setChecked(limit);
+    m_editor->setLimitLineWidth(limit);
+    connect(limitWidth, &QAction::toggled, this, [this](bool on) {
+        m_editor->setLimitLineWidth(on);
+        KConfigGroup group = KSharedConfig::openConfig()->group(u"View"_s);
+        group.writeEntry("LimitLineWidth", on);
+    });
+
     QAction *toggleFiles = m_treeDock->toggleViewAction();
     toggleFiles->setText(i18n("Show &Files Panel"));
     toggleFiles->setIcon(QIcon::fromTheme(u"sidebar-show-symbolic"_s));

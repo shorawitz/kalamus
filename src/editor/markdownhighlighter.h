@@ -6,6 +6,8 @@
 #include <QList>
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
+#include "tablelayout.h"
+
 #include <QTextBlockUserData>
 #include <QTextCursor>
 
@@ -71,6 +73,12 @@ public:
     /// Pixel size formulas are rendered at, matching the editor's text.
     qreal mathPixelSize(bool display) const;
 
+    /// Tables drawn as grids: the shared layout engine and the width they may use.
+    void setTableLayout(TableLayout *layout);
+    /// Returns true when the width changed (the caller then re-styles tables).
+    bool setTableWidth(qreal width);
+    qreal tableWidth() const;
+
 protected:
     void highlightBlock(const QString &text) override;
 
@@ -80,6 +88,10 @@ private:
     void highlightInline(const QString &text, int from, FormatList &formats, bool active);
     /// An invisible character that makes its line tall (and wide) enough for a formula.
     QTextCharFormat mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const;
+    /// An invisible character that makes a table row's source line as tall as the grid row.
+    QTextCharFormat tableRowStrut(const QTextBlock &block) const;
+    /// Font size whose line (with our line spacing) is @p height pixels tall.
+    qreal pointSizeForLineHeight(qreal height) const;
     /// For a rendered $$ block: the formula and whether it renders; empty if it doesn't.
     QString displayMathSource(const QTextBlock &opening, int *lastBlock) const;
     void flush(const FormatList &formats);
@@ -91,6 +103,8 @@ private:
     QTextCursor m_activeFirst; // first block shown as source
     QTextCursor m_activeLast; // last block shown as source
     QList<MathSpan> m_spans; // collected while highlighting the current block
+    TableLayout *m_tableLayout = nullptr;
+    qreal m_tableWidth = 0;
 
     QTextCharFormat m_hidden;
     QTextCharFormat m_strut; // invisible, but keeps the line at full height

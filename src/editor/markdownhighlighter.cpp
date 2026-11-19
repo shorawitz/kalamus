@@ -9,6 +9,8 @@
 #include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QScreen>
+
+#include <cmath>
 #include <QPalette>
 #include <QRegularExpression>
 #include <QTextDocument>
@@ -347,7 +349,7 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
                 // one invisible full-size character so each grid row gets a line's height.
                 apply(0, text.size(), m_hidden);
                 if (tableState != TableDelimiter) {
-                    formats[0] = m_strut;
+                    formats[0] = tableRowStrut(currentBlock());
                 }
                 return flush(formats);
             }
@@ -520,6 +522,69 @@ qreal MarkdownHighlighter::mathPixelSize(bool display) const
     const qreal dpi = screen ? screen->logicalDotsPerInchY() : 96.0;
     const qreal points = document()->defaultFont().pointSizeF() > 0 ? document()->defaultFont().pointSizeF() : 11.0;
     return points * dpi / 72.0 * (display ? 1.15 : 1.0);
+}
+
+void MarkdownHighlighter::setTableLayout(TableLayout *layout)
+{
+    m_tableLayout = layout;
+}
+
+bool MarkdownHighlighter::setTableWidth(qreal width)
+{
+    width = std::floor(width);
+    if (qFuzzyCompare(width, m_tableWidth)) {
+        return false;
+    }
+    m_tableWidth = width;
+    return true;
+}
+
+qreal MarkdownHighlighter::tableWidth() const
+{
+    return m_tableWidth;
+}
+
+qreal MarkdownHighlighter::pointSizeForLineHeight(qreal height) const
+{
+    const QFont base = document()->defaultFont();
+    const QFontMetricsF metrics(base);
+    const qreal lineHeight = (metrics.ascent() + metrics.descent()) * LineHeightPercent / 100.0;
+    return qMax<qreal>(1.0, base.pointSizeF() * height / lineHeight);
+}
+
+QTextCharFormat MarkdownHighlighter::tableRowStrut(const QTextBlock &block) const
+{
+    QTextCharFormat format = m_strut;
+    if (!m_tableLayout) {
+        return format;
+    }
+    // Find the header, then read the table from the text (states below may be stale).
+    QTextBlock header = block;
+    while (header.userState() != TableHeader && header.previous().isValid() && isTableState(header.previous().userState())) {
+        header = header.previous();
+    }
+    QStringList lines;
+    int row = -1;
+    int index = 0;
+    for (QTextBlock b = header; b.isValid(); b = b.next(), ++index) {
+        const QString text = b.text();
+        if (index >= 2 && (text.trimmed().isEmpty() || !text.contains(u'|'))) {
+            break;
+        }
+        lines.append(text);
+        if (b == block) {
+            row = index == 0 ? 0 : index - 1;
+        }
+    }
+    const auto table = MarkdownTable::parse(lines);
+    if (!table || row < 0) {
+        return format;
+    }
+    const auto layout = m_tableLayout->compute(*table, m_tableWidth);
+    if (row < layout.rowHeights.size()) {
+        format.setFontPointSize(pointSizeForLineHeight(layout.rowHeights.at(row)));
+    }
+    return format;
 }
 
 QTextCharFormat MarkdownHighlighter::mathStrut(qreal ascent, qreal descent, qreal width, QChar character) const

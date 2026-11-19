@@ -8,6 +8,7 @@ add_library(kalamuscore STATIC
     editor/markdowneditor.cpp editor/markdowneditor_tables.cpp editor/markdowneditor_math.cpp editor/markdowneditor.h
     editor/markdownhighlighter.cpp editor/markdownhighlighter.h
     editor/markdowntable.cpp editor/markdowntable.h
+    editor/tablelayout.cpp editor/tablelayout.h
 )
 # JKQTMathText's header has const char* default arguments for QString parameters.
 set_source_files_properties(mathrenderer.cpp PROPERTIES COMPILE_OPTIONS "-UQT_NO_CAST_FROM_ASCII")
