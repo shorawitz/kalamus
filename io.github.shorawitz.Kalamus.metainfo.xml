@@ -36,8 +36,7 @@
     </screenshot>
   </screenshots>
   <categories>
-    <category>Utility</category>
-    <category>TextEditor</category>
+    <category>Office</category>
   </categories>
   <provides>
     <binary>kalamus</binary>
