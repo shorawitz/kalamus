@@ -21,8 +21,14 @@ using namespace Qt::StringLiterals;
 namespace
 {
 const QRegularExpression kHeadingPrefix(uR"(^ {0,3}(#{1,6})(?:[ \t]+|$))"_s);
-const QRegularExpression kListPrefix(uR"(^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
+// No ^: matched with AnchorAtOffsetMatchOption, after a quote's > prefix when there is one.
+const QRegularExpression kListPrefix(uR"(([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
 const QRegularExpression kQuotePrefix(uR"(^ {0,3}(?:>[ \t]?)+)"_s);
+
+QRegularExpressionMatch listPrefixMatch(const QString &text, int from)
+{
+    return kListPrefix.match(text, from, QRegularExpression::NormalMatch, QRegularExpression::AnchorAtOffsetMatchOption);
+}
 
 QString textBetween(QTextDocument *doc, int from, int to)
 {
@@ -340,19 +346,30 @@ bool MarkdownEditor::continueBlock()
     const QString text = block.text();
     const int column = c.positionInBlock();
 
+    // A list item may sit inside a quote: "> - item" continues as "> - ".
+    const auto q = kQuotePrefix.match(text);
+    const int quoteEnd = q.hasMatch() ? int(q.capturedEnd(0)) : 0;
     QString prefix;
     int prefixEnd = 0;
-    if (const auto m = kListPrefix.match(text); m.hasMatch() && column >= m.capturedEnd(0)) {
+    if (const auto m = listPrefixMatch(text, quoteEnd); m.hasMatch() && column >= m.capturedEnd(0)) {
         QString marker = m.captured(2);
         if (marker.at(0).isDigit()) {
             const int number = QStringView(marker).chopped(1).toInt() + 1;
             marker = QString::number(number) + marker.back();
         }
-        prefix = m.captured(1) + marker + m.captured(3) + (m.capturedLength(4) > 0 ? u"[ ] "_s : QString());
+        prefix = text.left(quoteEnd) + m.captured(1) + marker + m.captured(3) + (m.capturedLength(4) > 0 ? u"[ ] "_s : QString());
         prefixEnd = m.capturedEnd(0);
-    } else if (const auto q = kQuotePrefix.match(text); q.hasMatch() && column >= q.capturedEnd(0)) {
+        if (text.mid(prefixEnd).trimmed().isEmpty() && quoteEnd > 0) {
+            // Enter on an empty item in a quote ends the list but stays in the quote.
+            QTextCursor line(block);
+            line.setPosition(block.position() + quoteEnd);
+            line.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            line.removeSelectedText();
+            return true;
+        }
+    } else if (q.hasMatch() && column >= quoteEnd) {
         prefix = q.captured(0);
-        prefixEnd = q.capturedEnd(0);
+        prefixEnd = quoteEnd;
     } else {
         return false;
     }
@@ -378,19 +395,22 @@ bool MarkdownEditor::indentListItem(bool outdent)
         return false;
     }
     const QTextBlock block = cursor.block();
-    const auto m = kListPrefix.match(block.text());
+    const auto q = kQuotePrefix.match(block.text());
+    const int quoteEnd = q.hasMatch() ? int(q.capturedEnd(0)) : 0;
+    const auto m = listPrefixMatch(block.text(), quoteEnd);
     if (!m.hasMatch()) {
         return false;
     }
     const int width = m.capturedLength(2) + m.capturedLength(3);
 
     QTextCursor c(block);
+    c.setPosition(block.position() + int(m.capturedStart(1))); // after a quote's > prefix
     if (outdent) {
         const int remove = qMin(width, m.capturedLength(1));
         if (remove == 0) {
             return true;
         }
-        c.setPosition(block.position() + remove, QTextCursor::KeepAnchor);
+        c.setPosition(c.position() + remove, QTextCursor::KeepAnchor);
         c.removeSelectedText();
     } else {
         c.insertText(QString(width, u' '));

@@ -30,7 +30,8 @@ const QRegularExpression kHeading(uR"(^ {0,3}(#{1,6})(?:[ \t]+|$))"_s);
 const QRegularExpression kSetextUnderline(uR"(^ {0,3}(=+|-+)[ \t]*$)"_s);
 const QRegularExpression kRule(uR"(^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$)"_s);
 const QRegularExpression kQuote(uR"(^ {0,3}(?:>[ \t]?)+)"_s);
-const QRegularExpression kList(uR"(^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
+// No ^: it is matched with AnchorAtOffsetMatchOption, after a quote's > prefix when there is one.
+const QRegularExpression kList(uR"(([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?)"_s);
 const QRegularExpression kRefDefinition(uR"(^ {0,3}\[[^\]]+\]:[ \t])"_s);
 
 // Inline patterns. They run on a whole paragraph on a whole paragraph, so a span may cross a line break ([\s\S]).
@@ -371,7 +372,7 @@ bool MarkdownHighlighter::isActive(const QTextBlock &block) const
 bool MarkdownHighlighter::isSetextCandidate(const QString &text)
 {
     // Plain paragraph text: not blank, not a list item or quote (those take the underline as their own).
-    return !text.trimmed().isEmpty() && !kQuote.match(text).hasMatch() && !kList.match(text).hasMatch() && !kHeading.match(text).hasMatch()
+    return !text.trimmed().isEmpty() && !kQuote.match(text).hasMatch() && !kList.match(text, 0, QRegularExpression::NormalMatch, QRegularExpression::AnchorAtOffsetMatchOption).hasMatch() && !kHeading.match(text).hasMatch()
         && !kFenceOpen.match(text).hasMatch() && !kRule.match(text).hasMatch() && !kSetextUnderline.match(text).hasMatch();
 }
 

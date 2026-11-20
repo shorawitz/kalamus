@@ -190,6 +190,34 @@ private Q_SLOTS:
         QVERIFY(editor.markdown().startsWith(u"# Title\n\nText"_s));
     }
 
+    void listsInsideQuotes()
+    {
+        MarkdownEditor editor;
+        load(editor, u"- plain\n\n> - first **a\n> - second b** c\n> 1. one"_s);
+        const QColor marker = formatAt(editor, 0, 0).foreground().color();
+        QCOMPARE(formatAt(editor, 2, 2).foreground().color(), marker); // the - after >
+        QCOMPARE(formatAt(editor, 4, 2).foreground().color(), marker); // 1.
+        QVERIFY(!isBold(editor, 3, 4)); // each item is its own paragraph: no bold across items
+
+        // Enter continues the list inside the quote; Enter on an empty item leaves just the quote.
+        MarkdownEditor typing;
+        typing.show();
+        typing.loadMarkdown(u"> - first"_s);
+        typing.moveCursor(QTextCursor::End);
+        QTest::keyClick(&typing, Qt::Key_Return);
+        QCOMPARE(typing.document()->lastBlock().text(), u"> - "_s);
+        QTest::keyClick(&typing, Qt::Key_Return);
+        QCOMPARE(typing.document()->lastBlock().text(), u"> "_s);
+
+        // Tab indents the item after the quote's prefix.
+        typing.loadMarkdown(u"> - first\n> - second"_s);
+        typing.moveCursor(QTextCursor::End);
+        QTest::keyClick(&typing, Qt::Key_Tab);
+        QCOMPARE(typing.document()->lastBlock().text(), u">   - second"_s);
+        QTest::keyClick(&typing, Qt::Key_Backtab);
+        QCOMPARE(typing.document()->lastBlock().text(), u"> - second"_s);
+    }
+
     void activeLineShowsItsOwnMarkers()
     {
         MarkdownEditor editor;
