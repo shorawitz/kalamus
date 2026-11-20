@@ -78,7 +78,7 @@ LineInfo classify(const QTextBlock &block, bool styled)
     if ((styled && block.userState() > 0) || (block.blockNumber() == 0 && text == u"---"_s) || kFenceOpen.match(text).hasMatch()
         || text.trimmed().startsWith(u"$$"_s) || kHeading.match(text).hasMatch() || kRule.match(text).hasMatch()
         || kRefDefinition.match(text).hasMatch() || kSetextUnderline.match(text).hasMatch()
-        || kSetextUnderline.match(block.next().text()).hasMatch()
+        || MarkdownHighlighter::setextLevel(block) > 0
         || (text.contains(u'|') && (MarkdownTable::isDelimiterRow(text) || MarkdownTable::isDelimiterRow(block.next().text())))) {
         info.kind = LineInfo::Breaker;
         return info;
@@ -376,6 +376,23 @@ bool MarkdownHighlighter::isSetextCandidate(const QString &text)
         && !kFenceOpen.match(text).hasMatch() && !kRule.match(text).hasMatch() && !kSetextUnderline.match(text).hasMatch();
 }
 
+int MarkdownHighlighter::setextLevel(const QTextBlock &block)
+{
+    if (!isSetextCandidate(block.text())) {
+        return 0;
+    }
+    QTextBlock b = block.next();
+    for (int i = 0; i < kParagraphReach && b.isValid(); ++i, b = b.next()) {
+        if (const auto m = kSetextUnderline.match(b.text()); m.hasMatch()) {
+            return m.captured(1).startsWith(u'=') ? 1 : 2;
+        }
+        if (!isSetextCandidate(b.text())) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
 void MarkdownHighlighter::updateActiveRange()
 {
     if (m_cursorBlock.isNull()) {
@@ -399,10 +416,17 @@ void MarkdownHighlighter::updateActiveRange()
         while ((last.userState() == FencedBacktick || last.userState() == FencedTilde) && last.next().isValid()) {
             last = last.next();
         }
-    } else if (first.userState() == SetextHeading1 || first.userState() == SetextHeading2) {
-        last = first.next(); // the underline shows while editing the heading
-    } else if (first.userState() == SetextUnderline) {
-        first = first.previous();
+    } else if (first.userState() == SetextHeading1 || first.userState() == SetextHeading2 || first.userState() == SetextUnderline) {
+        // The underline shows while editing any line of the heading.
+        auto isHeading = [](const QTextBlock &b) {
+            return b.userState() == SetextHeading1 || b.userState() == SetextHeading2;
+        };
+        while (first.previous().isValid() && isHeading(first.previous())) {
+            first = first.previous();
+        }
+        while (isHeading(last) && last.next().isValid()) {
+            last = last.next();
+        }
     } else if (first.userState() == MathBlock || first.userState() == MathBlockEnd) {
         // A $$ block shows as source in full while the cursor is anywhere in it.
         while (first.previous().isValid() && first.previous().userState() == MathBlock) {
@@ -466,6 +490,7 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
         apply(start, length, active ? m_marker : m_hidden);
     };
 
+    const int oldState = currentBlockState();
     setCurrentBlockState(Normal);
     m_mathSpans.clear();
     m_imageSpans.clear();
@@ -599,7 +624,11 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     const bool underline = kSetextUnderline.match(text).hasMatch();
     const bool underHeading = prev == SetextHeading1 || prev == SetextHeading2;
     if (underline != underHeading && previous.isValid() && (underHeading || isSetextCandidate(previous.text()))) {
-        scheduleRehighlight(previous);
+        // Every text line of the heading, not just the nearest one.
+        QTextBlock b = previous;
+        for (int i = 0; i < kParagraphReach && b.isValid() && isSetextCandidate(b.text()); ++i, b = b.previous()) {
+            scheduleRehighlight(b);
+        }
     }
     if (underline && underHeading) {
         setCurrentBlockState(SetextUnderline);
@@ -655,8 +684,13 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     }
 
     // Heading text underlined with === (level 1) or --- (level 2).
-    if (const auto m = kSetextUnderline.match(currentBlock().next().text()); m.hasMatch() && isSetextCandidate(text)) {
-        const int level = m.captured(1).startsWith(u'=') ? 1 : 2;
+    // A line that stops or starts being part of a heading changes the lines above it too.
+    const int wasLevel = oldState == SetextHeading1 ? 1 : oldState == SetextHeading2 ? 2 : 0;
+    const int level = setextLevel(currentBlock());
+    if (level != wasLevel && previous.isValid() && isSetextCandidate(previous.text())) {
+        scheduleRehighlight(previous);
+    }
+    if (level > 0) {
         setCurrentBlockState(level == 1 ? SetextHeading1 : SetextHeading2);
         apply(0, text.size(), m_heading[level - 1]);
         highlightInline(text, 0, formats, active);

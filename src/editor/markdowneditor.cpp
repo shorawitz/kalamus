@@ -281,15 +281,27 @@ void MarkdownEditor::setHeading(int level)
         level = 0;
     }
 
+    if (setext) {
+        // The heading may run over several lines: work on all of them.
+        while (block.previous().isValid() && block.previous().userState() == block.userState()) {
+            block = block.previous();
+        }
+    }
+
     QTextCursor c(block);
     c.beginEditBlock();
     if (setext) {
-        // Drop the === / --- line; the heading becomes # style (or plain text).
-        QTextCursor underline(block);
-        underline.movePosition(QTextCursor::EndOfBlock);
-        underline.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor);
-        underline.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
-        underline.removeSelectedText();
+        // Join the heading's lines and drop the === / --- line; it becomes # style (or plain text).
+        QStringList lines;
+        QTextBlock last = block;
+        for (; last.userState() == block.userState(); last = last.next()) {
+            lines.append(last.text().trimmed());
+        }
+        const int start = block.position(); // the block handle does not survive the merge
+        QTextCursor heading(block);
+        heading.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+        heading.insertText(lines.join(u' '));
+        c.setPosition(start); // the insert moved c past the text
     }
     if (m.hasMatch()) {
         c.setPosition(block.position() + m.capturedLength(0), QTextCursor::KeepAnchor);

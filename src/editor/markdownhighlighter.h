@@ -91,6 +91,9 @@ public:
     bool isActive(const QTextBlock &block) const;
     /// Text that becomes a heading when === or --- follows it.
     static bool isSetextCandidate(const QString &text);
+    /// 1 or 2 when @p block is one of the text lines of a setext heading (the run of
+    /// candidate lines just above an === or --- line), otherwise 0.
+    static int setextLevel(const QTextBlock &block);
 
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();

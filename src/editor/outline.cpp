@@ -45,10 +45,16 @@ QList<OutlineHeading> Outline::headings(const QTextDocument *document)
         // a heading line is a plain one (or not styled yet).
         const int state = block.userState();
         if (state == MarkdownHighlighter::SetextHeading1 || state == MarkdownHighlighter::SetextHeading2) {
-            // Heading text with === or --- under it.
-            const QString title = plainTitle(block.text());
+            // Heading text with === or --- under it; it may run over several lines.
+            const int first = block.blockNumber();
+            QString text = block.text();
+            while (block.next().isValid() && block.next().userState() == state) {
+                block = block.next();
+                text += u' ' + block.text();
+            }
+            const QString title = plainTitle(text);
             if (!title.isEmpty()) {
-                result.append({state == MarkdownHighlighter::SetextHeading1 ? 1 : 2, title, block.blockNumber()});
+                result.append({state == MarkdownHighlighter::SetextHeading1 ? 1 : 2, title, first});
             }
             continue;
         }

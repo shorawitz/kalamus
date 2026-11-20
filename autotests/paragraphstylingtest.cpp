@@ -181,6 +181,44 @@ private Q_SLOTS:
         QCOMPARE(second.document()->firstBlock().userState(), int(MarkdownHighlighter::Normal));
     }
 
+    void multiLineSetextHeadings()
+    {
+        MarkdownEditor editor;
+        load(editor, u"Before\n\nFirst line\nsecond line\n===\n\nAfter"_s);
+        const qreal body = formatAt(editor, 0, 0).fontPointSize();
+        const qreal heading = formatAt(editor, 3, 0).fontPointSize();
+        QVERIFY(heading > body);
+        QCOMPARE(formatAt(editor, 2, 0).fontPointSize(), heading); // the first line is part of the heading too
+        QVERIFY(isHidden(editor, 4, 0));
+
+        // Turning the middle of the run into a list item ends the heading above it.
+        MarkdownEditor second;
+        load(second, u"One\ntwo\nthree\n---"_s);
+        auto state = [&](int block) {
+            return second.document()->findBlockByNumber(block).userState();
+        };
+        QCOMPARE(state(0), int(MarkdownHighlighter::SetextHeading2));
+        insert(second, 1, 0, u"- "_s);
+        QCOMPARE(state(0), int(MarkdownHighlighter::Normal));
+
+        // Typing the underline under the last line turns every line above into the heading.
+        MarkdownEditor third;
+        load(third, u"Alpha\nbeta\ngamma"_s);
+        insert(third, 2, 5, u"\n==="_s);
+        for (int b = 0; b < 3; ++b) {
+            QCOMPARE(third.document()->findBlockByNumber(b).userState(), int(MarkdownHighlighter::SetextHeading1));
+        }
+    }
+
+    void headingActionJoinsMultiLineSetextHeadings()
+    {
+        MarkdownEditor editor;
+        load(editor, u"Long\nheading\n===\n\nText"_s);
+        editor.setTextCursor(QTextCursor(editor.document()->findBlockByNumber(1)));
+        editor.setHeading(2);
+        QVERIFY(editor.markdown().startsWith(u"## Long heading\n\nText"_s));
+    }
+
     void headingActionConvertsSetextHeadings()
     {
         MarkdownEditor editor;

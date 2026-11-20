@@ -69,6 +69,13 @@ private Q_SLOTS:
         editor.loadMarkdown(u"Top\n===\n\nSub *title*\n---\n\ntext\n\n---\n\n- item\n---\n"_s);
         QCoreApplication::processEvents();
         QCOMPARE(titles(Outline::headings(editor.document())), (QStringList{u"1 Top"_s, u"2 Sub title"_s}));
+
+        // A heading over several lines is one entry, at its first line.
+        editor.loadMarkdown(u"Intro\n\nA long\nheading\n===\n"_s);
+        QCoreApplication::processEvents();
+        const auto headings = Outline::headings(editor.document());
+        QCOMPARE(titles(headings), QStringList{u"1 A long heading"_s});
+        QCOMPARE(headings.first().blockNumber, 2);
     }
 
     void sectionAt()
