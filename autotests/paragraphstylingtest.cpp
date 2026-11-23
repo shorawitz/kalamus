@@ -108,6 +108,41 @@ private Q_SLOTS:
         QVERIFY(!isBold(editor, 2, 0));
     }
 
+    void spansLongerThanTwentyLines()
+    {
+        MarkdownEditor editor;
+        QStringList lines{u"Start **bold"_s};
+        for (int i = 0; i < 40; ++i) {
+            lines << u"middle line"_s;
+        }
+        lines << u"end** after"_s << u"and `code"_s;
+        for (int i = 0; i < 30; ++i) {
+            lines << u"inside"_s;
+        }
+        lines << u"code` done"_s;
+        load(editor, lines.join(u'\n'));
+        QVERIFY(isBold(editor, 0, 8)); // bold
+        QVERIFY(isBold(editor, 20, 0)); // the middle, 20 lines from both ends
+        QVERIFY(isBold(editor, 41, 0)); // end
+        QVERIFY(!isBold(editor, 41, 6)); // after
+        QVERIFY(isHidden(editor, 0, 6)); // the opening ** is 41 lines above its partner
+        QVERIFY(isCode(editor, 58, 0)); // inside
+        QVERIFY(!isCode(editor, 73, 6)); // done
+
+        // Closing a long span restyles its first line, 40 lines up.
+        MarkdownEditor second;
+        lines = QStringList{u"Open **here"_s};
+        for (int i = 0; i < 40; ++i) {
+            lines << u"filler"_s;
+        }
+        lines << u"close here"_s;
+        load(second, lines.join(u'\n'));
+        QVERIFY(!isBold(second, 0, 8));
+        insert(second, 41, 5, u"**"_s);
+        QVERIFY(isBold(second, 0, 8));
+        QVERIFY(isBold(second, 20, 0));
+    }
+
     void separateParagraphsDoNotJoin()
     {
         MarkdownEditor editor;

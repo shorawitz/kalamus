@@ -97,6 +97,9 @@ public:
 
     /// Rebuild formats from the current font and palette (call on theme/font changes).
     void refreshStyles();
+    /// Forget the inline styles kept for the current event. Call before re-styling for a
+    /// reason the text does not show (an image loaded, a new base folder).
+    void clearParagraphCache();
     /// The family used for code, math source and table source (size follows the text).
     void setCodeFont(const QFont &font);
 
@@ -124,6 +127,24 @@ protected:
 private:
     using FormatList = QList<QTextCharFormat>;
 
+    /// Inline styles of a text, on an empty base. A paragraph's result is shared by its lines.
+    struct InlineStyles {
+        FormatList formats;
+        QList<bool> replaced; ///< formats[i] replaces the base format instead of merging into it
+        QList<bool> taken; ///< inside code, math, a link target ...: not Markdown, not spell checked
+        QList<MathSpan> math;
+        QList<ImageSpan> images;
+    };
+    InlineStyles inlineStyles(const QString &text, int from, bool active) const;
+    /// inlineStyles() of a paragraph, kept while the current event is handled: every line of
+    /// the paragraph asks for it, and working it out per line made long paragraphs slow.
+    const InlineStyles &paragraphStyles(const QString &paragraph, bool active);
+    void queueParagraphCacheClear();
+    /// Puts @p styles from @p styleFrom over @p formats from @p formatFrom, @p length characters.
+    static void applyStyles(const InlineStyles &styles, int styleFrom, FormatList &formats, int formatFrom, int length);
+    /// Wavy underline for misspelled words of @p text between @p from and @p to; @p formats
+    /// starts at @p text's offset @p formatsOffset.
+    void spellCheck(const QString &text, int from, int to, const QList<bool> &taken, FormatList &formats, int formatsOffset) const;
     /// Spell checking only looks at @p checkFrom .. @p checkTo (-1: to the end).
     void highlightInline(const QString &text, int from, FormatList &formats, bool active, int checkFrom = 0, int checkTo = -1);
     /// A paragraph line: inline styles see the whole paragraph, so they can cross lines.
@@ -159,6 +180,23 @@ private:
     QList<QTextCursor> m_pendingParagraphs; // around recent edits, re-styled once queued work runs
     bool m_paragraphRestyleQueued = false;
     bool m_restylingParagraphs = false;
+    struct ParagraphCache {
+        bool valid = false;
+        QString text;
+        InlineStyles styles;
+    };
+    ParagraphCache m_paragraphCache[2]; // inactive, active
+    struct ParagraphExtent {
+        bool valid = false;
+        int blockCount = 0;
+        int first = 0; ///< block number of the paragraph's first line
+        QStringList texts; ///< its lines
+        QList<int> contentStarts; ///< where each line's text starts (after > and list markers)
+        QString paragraph; ///< the lines' text joined, markers left out
+        QList<int> lineStarts; ///< where each line starts in paragraph
+    };
+    ParagraphExtent m_paragraphExtent;
+    bool m_paragraphCacheClearQueued = false;
     int m_blockCount = 1;
     QFont m_codeFont;
 

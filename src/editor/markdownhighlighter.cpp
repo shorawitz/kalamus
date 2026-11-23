@@ -50,9 +50,11 @@ const QRegularExpression kItalic(uR"((?<![*\w])(\*|_)(?=[^\s*_])([\s\S]+?)(?<=[^
 const QRegularExpression kStrike(uR"(~~(?=\S)((?:(?!~~)[\s\S])+?)(?<=\S)~~)"_s);
 
 // Paragraphs: emphasis and code spans may run across the lines of one paragraph.
-// How far up and down a line looks for the rest of its paragraph. Spans longer than this are
-// rare, and the limit keeps typing fast in a very long paragraph.
-constexpr int kParagraphReach = 20;
+// How far up and down a line looks for the rest of its paragraph. The lines of a paragraph
+// share what one of them found (see highlightParagraphLine), so the reach can be long.
+constexpr int kParagraphReach = 1000;
+// How many text lines above an === or --- underline may belong to its heading.
+constexpr int kSetextReach = 20;
 
 struct LineInfo {
     enum Kind {
@@ -66,8 +68,11 @@ struct LineInfo {
     int contentStart = 0; ///< after any > and list marker
 };
 
-/// @p styled: the block's state is up to date (the blocks above the one being styled).
-LineInfo classify(const QTextBlock &block, bool styled)
+/// @p styled: the block's state is up to date (the blocks above the one being styled); a setext
+/// heading line then has its own state. @p checkSetext: also look below for an === or ---
+/// underline (lines met walking down a paragraph skip it: the line they continue would be
+/// part of that heading too).
+LineInfo classify(const QTextBlock &block, bool styled, bool checkSetext = true)
 {
     const QString text = block.text();
     LineInfo info;
@@ -78,7 +83,7 @@ LineInfo classify(const QTextBlock &block, bool styled)
     if ((styled && block.userState() > 0) || (block.blockNumber() == 0 && text == u"---"_s) || kFenceOpen.match(text).hasMatch()
         || text.trimmed().startsWith(u"$$"_s) || kHeading.match(text).hasMatch() || kRule.match(text).hasMatch()
         || kRefDefinition.match(text).hasMatch() || kSetextUnderline.match(text).hasMatch()
-        || MarkdownHighlighter::setextLevel(block) > 0
+        || (!styled && checkSetext && MarkdownHighlighter::setextLevel(block) > 0)
         || (text.contains(u'|') && (MarkdownTable::isDelimiterRow(text) || MarkdownTable::isDelimiterRow(block.next().text())))) {
         info.kind = LineInfo::Breaker;
         return info;
@@ -166,7 +171,7 @@ void paragraphExtent(const QTextBlock &block, QTextBlock *first, QTextBlock *las
         if (!next.isValid()) {
             break;
         }
-        const LineInfo info = classify(next, false);
+        const LineInfo info = classify(next, false, false);
         if (!continues(above, info)) {
             break;
         }
@@ -254,6 +259,7 @@ void MarkdownHighlighter::restyleEditedParagraphs()
 
 void MarkdownHighlighter::refreshStyles()
 {
+    clearParagraphCache();
     const QPalette pal = QGuiApplication::palette();
     const QFont base = document()->defaultFont();
     const qreal size = base.pointSizeF() > 0 ? base.pointSizeF() : 11.0;
@@ -378,19 +384,34 @@ bool MarkdownHighlighter::isSetextCandidate(const QString &text)
 
 int MarkdownHighlighter::setextLevel(const QTextBlock &block)
 {
-    if (!isSetextCandidate(block.text())) {
+    // Every line asks, so first look cheaply for an underline before the next blank line.
+    auto underlineLevel = [](const QString &text) {
+        int i = 0;
+        while (i < text.size() && i < 4 && text.at(i) == u' ') {
+            ++i;
+        }
+        if (i == 4 || i == text.size() || (text.at(i) != u'=' && text.at(i) != u'-')) {
+            return 0;
+        }
+        return kSetextUnderline.match(text).hasMatch() ? (text.at(i) == u'=' ? 1 : 2) : 0;
+    };
+    QTextBlock underline = block.next();
+    int level = 0;
+    for (int i = 0; i < kSetextReach && underline.isValid(); ++i, underline = underline.next()) {
+        const QString text = underline.text();
+        if ((level = underlineLevel(text)) > 0 || text.trimmed().isEmpty()) {
+            break;
+        }
+    }
+    if (level == 0) {
         return 0;
     }
-    QTextBlock b = block.next();
-    for (int i = 0; i < kParagraphReach && b.isValid(); ++i, b = b.next()) {
-        if (const auto m = kSetextUnderline.match(b.text()); m.hasMatch()) {
-            return m.captured(1).startsWith(u'=') ? 1 : 2;
-        }
+    for (QTextBlock b = block; b != underline; b = b.next()) {
         if (!isSetextCandidate(b.text())) {
             return 0;
         }
     }
-    return 0;
+    return level;
 }
 
 void MarkdownHighlighter::updateActiveRange()
@@ -626,7 +647,7 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
     if (underline != underHeading && previous.isValid() && (underHeading || isSetextCandidate(previous.text()))) {
         // Every text line of the heading, not just the nearest one.
         QTextBlock b = previous;
-        for (int i = 0; i < kParagraphReach && b.isValid() && isSetextCandidate(b.text()); ++i, b = b.previous()) {
+        for (int i = 0; i < kSetextReach && b.isValid() && isSetextCandidate(b.text()); ++i, b = b.previous()) {
             scheduleRehighlight(b);
         }
     }
@@ -722,62 +743,79 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
 
 void MarkdownHighlighter::highlightParagraphLine(const QString &text, int offset, FormatList &formats, bool active)
 {
-    QTextBlock first;
-    QTextBlock last;
-    QList<int> contentStarts;
-    paragraphExtent(currentBlock(), &first, &last, &contentStarts);
-    if (first == last) {
+    // The other lines of the paragraph are styled right after this one and find the same
+    // paragraph; finding it again for each of them made long paragraphs slow. An edit to any
+    // of its lines styles that line at once, which finds its text changed and looks again.
+    const int number = currentBlock().blockNumber();
+    ParagraphExtent &extent = m_paragraphExtent;
+    if (!extent.valid || extent.blockCount != document()->blockCount() || number < extent.first
+        || number >= extent.first + extent.texts.size() || extent.texts.at(number - extent.first) != text) {
+        QTextBlock first;
+        QTextBlock last;
+        paragraphExtent(currentBlock(), &first, &last, &extent.contentStarts);
+        extent.valid = true;
+        extent.blockCount = document()->blockCount();
+        extent.first = first.blockNumber();
+        extent.texts.clear();
+        for (QTextBlock b = first;; b = b.next()) {
+            extent.texts.append(b.text());
+            if (b == last) {
+                break;
+            }
+        }
+        // The paragraph's text (markers like > and - left out), styled as one.
+        extent.paragraph.clear();
+        extent.lineStarts.clear();
+        for (int index = 0; index < extent.texts.size(); ++index) {
+            if (index > 0) {
+                extent.paragraph += u'\n';
+            }
+            extent.lineStarts.append(int(extent.paragraph.size()));
+            extent.paragraph += QStringView(extent.texts.at(index)).mid(extent.contentStarts.at(index));
+        }
+        queueParagraphCacheClear();
+    }
+    if (extent.texts.size() == 1) {
         highlightInline(text, offset, formats, active);
         return;
     }
 
-    // Style the paragraph's text (markers like > and - left out) as one, then keep this line's part.
-    QString paragraph;
-    int lineStart = 0;
-    int index = 0;
-    for (QTextBlock b = first;; b = b.next(), ++index) {
-        if (b != first) {
-            paragraph += u'\n';
-        }
-        if (b == currentBlock()) {
-            offset = qMax(offset, contentStarts.at(index));
-            lineStart = int(paragraph.size());
-            paragraph += QStringView(text).mid(offset);
-        } else {
-            paragraph += QStringView(b.text()).mid(contentStarts.at(index));
-        }
-        if (b == last) {
-            break;
-        }
-    }
+    // Style the whole paragraph, then keep this line's part.
+    const int index = number - extent.first;
+    const QString &paragraph = extent.paragraph;
+    const int contentStart = extent.contentStarts.at(index);
+    offset = qMax(offset, contentStart);
+    const int lineStart = extent.lineStarts.at(index) + (offset - contentStart);
     const int length = int(text.size()) - offset;
-    FormatList paragraphFormats(paragraph.size());
-    for (int i = 0; i < length; ++i) {
-        paragraphFormats[lineStart + i] = formats[offset + i];
-    }
-    highlightInline(paragraph, 0, paragraphFormats, active, lineStart, lineStart + length);
-    for (int i = 0; i < length; ++i) {
-        formats[offset + i] = paragraphFormats[lineStart + i];
-    }
+    const InlineStyles &styles = paragraphStyles(paragraph, active);
+    applyStyles(styles, lineStart, formats, offset, length);
+    spellCheck(paragraph, lineStart, lineStart + length, styles.taken, formats, offset - lineStart);
 
     // Formulas and images never cross a line; keep this line's, at this line's offsets.
-    auto keepOwn = [&](auto &spans) {
-        for (qsizetype i = spans.size() - 1; i >= 0; --i) {
-            auto &span = spans[i];
-            if (span.start < lineStart || span.start + span.length > lineStart + length) {
-                spans.removeAt(i);
-            } else {
+    auto keepOwn = [&](const auto &spans, auto &own) {
+        for (auto span : spans) {
+            if (span.start >= lineStart && span.start + span.length <= lineStart + length) {
                 span.start += offset - lineStart;
+                own.append(span);
             }
         }
     };
-    keepOwn(m_mathSpans);
-    keepOwn(m_imageSpans);
+    keepOwn(styles.math, m_mathSpans);
+    keepOwn(styles.images, m_imageSpans);
 }
 
-void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active, int checkFrom, int checkTo)
+MarkdownHighlighter::InlineStyles MarkdownHighlighter::inlineStyles(const QString &text, int from, bool active) const
 {
-    QList<bool> taken(text.size(), false);
+    InlineStyles result;
+    result.formats.resize(text.size());
+    result.replaced.resize(text.size(), false);
+    result.taken.resize(text.size(), false);
+    FormatList &formats = result.formats;
+    QList<bool> &taken = result.taken;
+    auto replace = [&](int at, const QTextCharFormat &fmt) {
+        formats[at] = fmt;
+        result.replaced[at] = true;
+    };
 
     auto apply = [&](int start, int length, const QTextCharFormat &fmt) {
         const int end = qMin<int>(text.size(), start + length);
@@ -835,8 +873,8 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
             }
             // Hide the source; its first character reserves the formula's width and height.
             apply(start, length, m_hidden);
-            formats[start] = mathStrut(metrics.ascent, metrics.descent, metrics.width, text.at(start));
-            m_mathSpans.append({start, length, latex, false});
+            replace(start, mathStrut(metrics.ascent, metrics.descent, metrics.width, text.at(start)));
+            result.math.append({start, length, latex, false});
         }
     }
 
@@ -863,8 +901,8 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
         const QFontMetricsF metrics(document()->defaultFont());
         const bool tall = size.height() > metrics.ascent() + metrics.descent();
         apply(start, length, m_hidden);
-        formats[start] = mathStrut(size.height(), 0, size.width(), text.at(start), tall);
-        m_imageSpans.append({start, length, url, size, tall});
+        replace(start, mathStrut(size.height(), 0, size.width(), text.at(start), tall));
+        result.images.append({start, length, url, size, tall});
         take(start, length);
         return true;
     };
@@ -941,32 +979,94 @@ void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatL
             take(m.capturedEnd(0) - marker, marker);
         }
     }
+    return result;
+}
 
-    if (m_spellChecker && m_spellChecker->isEnabled()) {
-        // Only this line's words. Code, math and link targets that start on another line of
-        // the paragraph are not visible to wordsToCheck() here, but they are "taken" above.
-        const int lineFrom = qMax(from, checkFrom);
-        const int lineTo = checkTo < 0 ? int(text.size()) : checkTo;
-        const QString line = text.mid(lineFrom, lineTo - lineFrom);
-        const auto words = SpellChecker::wordsToCheck(line, 0);
-        for (const auto &word : words) {
-            const int start = lineFrom + word.start;
-            if (taken[start]) {
-                continue;
-            }
-            if (m_spellChecker->isMisspelled(line.mid(word.start, word.length))) {
-                for (int i = start; i < start + word.length; ++i) {
-                    formats[i].clearProperty(QTextFormat::FontUnderline); // a link's underline would hide the wave
-                    formats[i].merge(m_misspelled);
-                }
+void MarkdownHighlighter::applyStyles(const InlineStyles &styles, int styleFrom, FormatList &formats, int formatFrom, int length)
+{
+    for (int i = 0; i < length; ++i) {
+        const int s = styleFrom + i;
+        QTextCharFormat &target = formats[formatFrom + i];
+        if (styles.replaced[s]) {
+            target = styles.formats[s];
+        } else {
+            target.merge(styles.formats[s]); // merging the merged result equals merging each in turn
+        }
+    }
+}
+
+void MarkdownHighlighter::spellCheck(const QString &text, int from, int to, const QList<bool> &taken, FormatList &formats, int formatsOffset) const
+{
+    if (!m_spellChecker || !m_spellChecker->isEnabled()) {
+        return;
+    }
+    // Code, math and link targets that start on another line of the paragraph are not
+    // visible to wordsToCheck() here, but they are "taken".
+    const QString line = text.mid(from, to - from);
+    const auto words = SpellChecker::wordsToCheck(line, 0);
+    for (const auto &word : words) {
+        const int start = from + word.start;
+        if (taken[start]) {
+            continue;
+        }
+        if (m_spellChecker->isMisspelled(line.mid(word.start, word.length))) {
+            for (int i = start; i < start + word.length; ++i) {
+                QTextCharFormat &format = formats[i + formatsOffset];
+                format.clearProperty(QTextFormat::FontUnderline); // a link's underline would hide the wave
+                format.merge(m_misspelled);
             }
         }
     }
 }
 
+void MarkdownHighlighter::highlightInline(const QString &text, int from, FormatList &formats, bool active, int checkFrom, int checkTo)
+{
+    const InlineStyles styles = inlineStyles(text, from, active);
+    applyStyles(styles, from, formats, from, int(text.size()) - from);
+    m_mathSpans.append(styles.math);
+    m_imageSpans.append(styles.images);
+    spellCheck(text, qMax(from, checkFrom), checkTo < 0 ? int(text.size()) : checkTo, styles.taken, formats, 0);
+}
+
+const MarkdownHighlighter::InlineStyles &MarkdownHighlighter::paragraphStyles(const QString &paragraph, bool active)
+{
+    ParagraphCache &cache = m_paragraphCache[active ? 1 : 0];
+    if (!cache.valid || (cache.text.constData() != paragraph.constData() && cache.text != paragraph)) {
+        cache.styles = inlineStyles(paragraph, 0, active);
+        cache.text = paragraph;
+        cache.valid = true;
+        queueParagraphCacheClear();
+    }
+    return cache.styles;
+}
+
+void MarkdownHighlighter::queueParagraphCacheClear()
+{
+    // Only for the lines styled now: images load, fonts and widths change between events.
+    if (!m_paragraphCacheClearQueued) {
+        m_paragraphCacheClearQueued = true;
+        QMetaObject::invokeMethod(
+            this,
+            [this] {
+                m_paragraphCacheClearQueued = false;
+                clearParagraphCache();
+            },
+            Qt::QueuedConnection);
+    }
+}
+
+void MarkdownHighlighter::clearParagraphCache()
+{
+    for (ParagraphCache &cache : m_paragraphCache) {
+        cache = {};
+    }
+    m_paragraphExtent = {};
+}
+
 void MarkdownHighlighter::setCodeFont(const QFont &font)
 {
     m_codeFont = font;
+    clearParagraphCache();
 }
 
 void MarkdownHighlighter::setSpellChecker(SpellChecker *checker)
@@ -991,6 +1091,7 @@ void MarkdownHighlighter::setTableLayout(TableLayout *layout)
 void MarkdownHighlighter::setImageCache(ImageCache *cache)
 {
     m_imageCache = cache;
+    clearParagraphCache();
 }
 
 bool MarkdownHighlighter::setContentWidth(qreal width)
@@ -1000,6 +1101,7 @@ bool MarkdownHighlighter::setContentWidth(qreal width)
         return false;
     }
     m_contentWidth = width;
+    clearParagraphCache();
     return true;
 }
 

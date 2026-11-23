@@ -457,6 +457,7 @@ void MarkdownEditor::setBaseDirectory(const QString &directory)
     m_imageCache->setBaseDirectory(directory);
     m_imageCache->clear();
     m_scaledImages.clear();
+    m_highlighter->clearParagraphCache();
     m_highlighter->rehighlight();
 }
 
@@ -476,6 +477,7 @@ void MarkdownEditor::restyleImageBlocks()
         this,
         [this] {
             m_imageRestylePending = false;
+            m_highlighter->clearParagraphCache();
             for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
                 if (block.text().contains(u"!["_s)) {
                     m_highlighter->rehighlightBlock(block);
