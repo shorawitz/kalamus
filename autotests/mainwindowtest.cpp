@@ -93,6 +93,30 @@ private Q_SLOTS:
         QVERIFY(recent(again).contains(u"b.md"_s));
     }
 
+    void openedFileWrapsInsideTheWindow()
+    {
+        // The file is opened before the window shows, with the cursor on the first line (so
+        // its "# " shows). Every line must fit; the end of the first one used to be cut off.
+        const QString path = write(u"wrap.md"_s, u"# Reusable workflow design for the stage pipeline and the DevOps team accounts\n\nText\n"_s);
+        MainWindow window;
+        window.openPath(path);
+        window.resize(1521, 1188);
+        window.show();
+        for (int i = 0; i < 50; ++i) {
+            QCoreApplication::processEvents();
+        }
+        auto *editor = window.findChild<MarkdownEditor *>();
+        QVERIFY2(editor->document()->textWidth() <= editor->viewport()->width(),
+                 qPrintable(u"laid out for %1, shown in %2"_s.arg(editor->document()->textWidth()).arg(editor->viewport()->width())));
+        const qreal width = editor->document()->textWidth() - 2 * editor->document()->documentMargin();
+        for (QTextBlock block = editor->document()->firstBlock(); block.isValid(); block = block.next()) {
+            for (int i = 0; i < block.layout()->lineCount(); ++i) {
+                const qreal line = block.layout()->lineAt(i).naturalTextWidth();
+                QVERIFY2(line <= width + 1, qPrintable(u"line %1 of block %2: %3 > %4"_s.arg(i).arg(block.blockNumber()).arg(line).arg(width)));
+            }
+        }
+    }
+
     void pickingARecentFileOpensIt()
     {
         const QString c = write(u"c.md"_s, u"Hello from C"_s);

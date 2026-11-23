@@ -4,6 +4,7 @@
 #include "markdowneditor.h"
 #include "markdownhighlighter.h"
 
+#include <QResizeEvent>
 #include <QAbstractTextDocumentLayout>
 #include <QFontDatabase>
 #include <QFontInfo>
@@ -571,7 +572,14 @@ void MarkdownEditor::updateMargins()
         const int maxWidth = qRound(em * m_readableWidth + 2 * document()->documentMargin());
         side = qMax(0, (width() - maxWidth) / 2);
     }
-    setViewportMargins(side, 0, side, 0);
+    const QMargins margins(side, 0, side, 0);
+    if (margins != viewportMargins()) {
+        setViewportMargins(margins);
+        // QTextEdit lays the text out for the viewport's width only on its own resize, which
+        // came before these margins (a window opening with a file was cut off on the right).
+        QResizeEvent relayout(size(), QSize()); // an unknown old size, or it skips the layout
+        QTextEdit::resizeEvent(&relayout);
+    }
     relayoutTables();
 }
 
