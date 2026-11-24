@@ -235,6 +235,7 @@ void FindBar::closeBar()
     hide();
     m_matches.clear();
     m_editor->setExtraSelections({});
+    m_editor->viewport()->update();
     m_editor->setFocus();
 }
 
@@ -294,6 +295,7 @@ void FindBar::updateHighlights()
         selections.append({match, format});
     }
     m_editor->setExtraSelections(selections);
+    m_editor->viewport()->update(); // tables drawn as grids paint the matches in their cells
 }
 
 void FindBar::updateStatus(const QString &note)

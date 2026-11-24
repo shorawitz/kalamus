@@ -97,6 +97,18 @@ QTextDocument *TableLayout::cell(const QString &text, bool header, qreal width, 
     return doc;
 }
 
+QList<int> TableLayout::renderedPositions(const QString &source, const QString &rendered)
+{
+    QList<int> positions(source.size(), -1);
+    int r = 0;
+    for (int s = 0; s < source.size() && r < rendered.size(); ++s) {
+        if (source.at(s) == rendered.at(r)) {
+            positions[s] = r++;
+        }
+    }
+    return positions;
+}
+
 TableLayout::Result TableLayout::compute(const MarkdownTable &table, qreal availableWidth)
 {
     QString key = QString::number(qRound(availableWidth)) + u'\x1f';

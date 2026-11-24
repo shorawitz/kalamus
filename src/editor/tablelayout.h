@@ -48,6 +48,14 @@ public:
 
     void clear();
 
+    /**
+     * For each character of a cell's @p source, where it ends up in the cell's
+     * @p rendered plain text, or -1 for a character that is not drawn (markers,
+     * escapes, link targets). Rendering only removes characters, so the rendered
+     * text is matched to the source in order.
+     */
+    static QList<int> renderedPositions(const QString &source, const QString &rendered);
+
 private:
     QTextDocument *document(const QString &text, bool header);
 

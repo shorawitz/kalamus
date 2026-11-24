@@ -3,8 +3,11 @@
 
 #include "findbar.h"
 #include "markdowneditor.h"
+#include "tablelayout.h"
 
 #include <QApplication>
+#include <QFontMetrics>
+#include <QImage>
 #include <KLocalizedString>
 #include <QTest>
 #include <QTextBlock>
@@ -127,6 +130,78 @@ private Q_SLOTS:
         f.bar->openFind();
         QCOMPARE(f.bar->matchCount(), 2);
         QCOMPARE(f.bar->currentMatch(), 1);
+    }
+
+    void renderedPositionsSkipMarkers()
+    {
+        // "a **b** \\| [c](u)" renders as "a b | c".
+        const auto positions = TableLayout::renderedPositions(u"a **b** \\| [c](u)"_s, u"a b | c"_s);
+        const QList<int> expected{0, 1, -1, -1, 2, -1, -1, 3, -1, 4, 5, -1, 6, -1, -1, -1, -1};
+        QCOMPARE(positions, expected);
+    }
+
+    // Pixels in the find highlight's colour, as a bounding box.
+    static QRect highlightedArea(MarkdownEditor *editor, int *count)
+    {
+        const QColor base = editor->palette().color(QPalette::Base);
+        const QColor yellow(0xf6, 0xd3, 0x2d);
+        auto channel = [](int a, int b) {
+            return a + (b - a) * 0.55;
+        };
+        const QImage image = editor->viewport()->grab().toImage();
+        QRect area;
+        *count = 0;
+        auto matches = [&](int x, int y) {
+            const QColor c = image.pixelColor(x, y);
+            return qAbs(c.red() - channel(base.red(), yellow.red())) < 3 && qAbs(c.green() - channel(base.green(), yellow.green())) < 3
+                && qAbs(c.blue() - channel(base.blue(), yellow.blue())) < 3;
+        };
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 1; x + 1 < image.width(); ++x) {
+                // A run, not an antialiasing fringe beside a glyph.
+                if (matches(x - 1, y) && matches(x, y) && matches(x + 1, y)) {
+                    area |= QRect(x, y, 1, 1);
+                    ++*count;
+                }
+            }
+        }
+        return area;
+    }
+
+    void matchesInTablesAreHighlighted()
+    {
+        Fixture f(u"Intro\n\n| Fruit | Note |\n|---|---|\n| apple | some **zebra** here |\n\nEnd"_s);
+        f.bar->openFind();
+        f.bar->setFindText(u"zebra"_s);
+        QCOMPARE(f.bar->matchCount(), 1);
+
+        // Leave the table, so it is drawn as a grid; the highlight stays.
+        f.editor->moveCursor(QTextCursor::End);
+        QCOMPARE(f.editor->extraSelections().size(), 1);
+        QApplication::processEvents();
+
+        int count = 0;
+        const QRect zebra = highlightedArea(f.editor, &count);
+        QVERIFY2(count > 20, qPrintable(u"highlighted pixels: %1"_s.arg(count)));
+        // Over the rendered word only, without the ** markers.
+        QFont bold = f.editor->font();
+        bold.setBold(true);
+        const int width = QFontMetrics(bold).horizontalAdvance(u"zebra"_s);
+        QVERIFY2(qAbs(zebra.width() - width) < width / 2, qPrintable(u"%1 vs %2"_s.arg(zebra.width()).arg(width)));
+
+        // A match in the first column is drawn to the left of it.
+        f.bar->setFindText(u"apple"_s);
+        f.editor->moveCursor(QTextCursor::End);
+        QApplication::processEvents();
+        const QRect apple = highlightedArea(f.editor, &count);
+        QVERIFY(count > 20);
+        QVERIFY(apple.right() < zebra.left());
+        QCOMPARE(apple.top(), zebra.top()); // same row
+
+        f.bar->closeBar();
+        QApplication::processEvents();
+        highlightedArea(f.editor, &count);
+        QCOMPARE(count, 0);
     }
 
     void invalidRegexSaysSo()

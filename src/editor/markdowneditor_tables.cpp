@@ -375,6 +375,46 @@ QList<MarkdownEditor::TableGrid> MarkdownEditor::visibleTables() const
     return grids;
 }
 
+namespace
+{
+
+/// The parts of @p extras inside @p cell (of @p block), moved onto its rendered @p doc.
+QList<QAbstractTextDocumentLayout::Selection>
+cellSelections(QTextDocument *doc, const QTextBlock &block, const MarkdownTable::Cell &cell, const QList<QTextEdit::ExtraSelection> &extras)
+{
+    QList<QAbstractTextDocumentLayout::Selection> selections;
+    const int base = block.position() + cell.start;
+    QList<int> positions; // filled on first use
+    for (const QTextEdit::ExtraSelection &extra : extras) {
+        const int from = qMax(extra.cursor.selectionStart() - base, 0);
+        const int to = qMin(extra.cursor.selectionEnd() - base, cell.end - cell.start);
+        if (from >= to) {
+            continue;
+        }
+        if (positions.isEmpty()) {
+            positions = TableLayout::renderedPositions(block.text().mid(cell.start, cell.end - cell.start), doc->toPlainText());
+        }
+        int first = -1;
+        int last = -1;
+        for (int i = from; i < to; ++i) {
+            if (const int p = positions.at(i); p >= 0) {
+                first = first < 0 ? p : first;
+                last = p;
+            }
+        }
+        if (first < 0) {
+            continue; // only markers matched: nothing drawn to highlight
+        }
+        QTextCursor cursor(doc);
+        cursor.setPosition(first);
+        cursor.setPosition(last + 1, QTextCursor::KeepAnchor);
+        selections.append({cursor, extra.format});
+    }
+    return selections;
+}
+
+} // namespace
+
 void MarkdownEditor::paintTable(QPainter &painter, const TableGrid &grid) const
 {
     const QPalette pal = palette();
@@ -399,8 +439,16 @@ void MarkdownEditor::paintTable(QPainter &painter, const TableGrid &grid) const
     // Cell contents, wrapped to the column width and top-aligned.
     QAbstractTextDocumentLayout::PaintContext context;
     context.palette = pal;
+    const QList<QTextEdit::ExtraSelection> extras = extraSelections(); // e.g. find matches
     for (int r = 0; r < grid.rows.size() && r < grid.texts.size(); ++r) {
         const QRectF rowRect = grid.rowRects.at(r);
+        const QTextBlock block = grid.rows.at(r);
+        QList<QTextEdit::ExtraSelection> rowExtras;
+        for (const QTextEdit::ExtraSelection &extra : extras) {
+            if (extra.cursor.selectionEnd() > block.position() && extra.cursor.selectionStart() < block.position() + block.length()) {
+                rowExtras.append(extra);
+            }
+        }
         for (int c = 0; c < grid.columnX.size(); ++c) {
             const QString text = grid.texts.at(r).value(c);
             if (text.isEmpty()) {
@@ -411,6 +459,9 @@ void MarkdownEditor::paintTable(QPainter &painter, const TableGrid &grid) const
             painter.save();
             painter.setClipRect(cell, Qt::IntersectClip);
             painter.translate(cell.left() + TableLayout::Padding, cell.top() + TableLayout::VerticalPadding);
+            context.selections = rowExtras.isEmpty() || c >= grid.cells.at(r).size()
+                ? QList<QAbstractTextDocumentLayout::Selection>()
+                : cellSelections(doc, block, grid.cells.at(r).at(c), rowExtras);
             doc->documentLayout()->draw(&painter, context);
             painter.restore();
         }
