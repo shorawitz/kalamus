@@ -21,6 +21,8 @@
 #include <QTest>
 #include <QTimer>
 #include <KToolBar>
+#include <KXMLGUIFactory>
+#include <QMenu>
 
 #include <KActionCollection>
 #include <KLocalizedString>
@@ -149,6 +151,45 @@ private Q_SLOTS:
         Q_EMIT action->urlSelected(QUrl::fromLocalFile(gone));
         QVERIFY(told);
         QVERIFY(!recent(window).contains(u"gone.md"_s));
+    }
+
+    void closeLeavesAnEmptyDocument()
+    {
+        const QString path = write(u"close.md"_s, u"# Close me"_s);
+        MainWindow window;
+        window.openPath(path);
+        auto *editor = window.findChild<MarkdownEditor *>();
+        QCOMPARE(editor->markdown(), u"# Close me"_s);
+
+        QAction *close = window.actionCollection()->action(u"file_close"_s);
+        QVERIFY(close);
+        QCOMPARE(close->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_W));
+        auto *file = qobject_cast<QMenu *>(window.guiFactory()->container(u"file"_s, &window));
+        QVERIFY(file && file->actions().contains(close)); // in the File menu
+
+        // Unsaved changes: cancelling the question keeps the document.
+        editor->insertPlainText(u"more "_s);
+        bool asked = false;
+        QTimer::singleShot(200, this, [&asked] {
+            if (QWidget *box = QApplication::activeModalWidget()) {
+                asked = true;
+                box->close(); // Cancel
+            }
+        });
+        close->trigger();
+        QVERIFY(asked);
+        QVERIFY(editor->markdown().contains(u"Close me"_s));
+
+        editor->document()->setModified(false);
+        close->trigger();
+        QCOMPARE(editor->markdown(), QString());
+        QVERIFY(!window.windowTitle().contains(u"close.md"_s));
+        QVERIFY(!editor->document()->isModified());
+
+        // The next start doesn't reopen it.
+        MainWindow again;
+        again.restoreSession();
+        QCOMPARE(again.findChild<MarkdownEditor *>()->markdown(), QString());
     }
 
     void clearListIsRemembered()

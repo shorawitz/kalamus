@@ -38,6 +38,8 @@ private:
     void setupActions();
     void newFile();
     void openFile();
+    /// Close the document (asking about unsaved changes), leaving an empty one.
+    void closeFile();
     void openFolder();
     bool save();
     bool saveAs();

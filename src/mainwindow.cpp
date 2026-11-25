@@ -124,6 +124,7 @@ void MainWindow::setupActions()
     });
     KStandardAction::save(this, &MainWindow::save, ac);
     KStandardAction::saveAs(this, &MainWindow::saveAs, ac);
+    KStandardAction::close(this, &MainWindow::closeFile, ac);
     KStandardAction::quit(this, &QWidget::close, ac);
     KStandardAction::find(m_findBar, &FindBar::openFind, ac);
     KStandardAction::findNext(m_findBar, &FindBar::findNext, ac);
@@ -432,6 +433,22 @@ void MainWindow::newFile()
     m_editor->setBaseDirectory(QString());
     m_editor->loadMarkdown(QString());
     updateCaption();
+}
+
+void MainWindow::closeFile()
+{
+    if (!maybeSave()) {
+        return;
+    }
+    m_path.clear();
+    m_editor->setBaseDirectory(QString());
+    m_editor->loadMarkdown(QString());
+    refreshOutline();
+    m_tree->setCurrentIndex({});
+    updateCaption();
+
+    KConfigGroup group = sessionGroup();
+    group.deleteEntry("LastFile"); // closed on purpose: don't reopen it at the next start
 }
 
 void MainWindow::openFile()
